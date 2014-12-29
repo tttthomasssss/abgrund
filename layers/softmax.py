@@ -10,20 +10,13 @@ https://chrisjmccormick.wordpress.com/2014/06/13/deep-learning-tutorial-softmax-
 '''
 
 
-def softmax(x, W, j):
-	print np.dot(W[j, :], x)
-	print 'ENUMERATOR:', np.exp(np.dot(W[j, :], x))
-	print np.dot(W, x)
-	print np.exp(np.dot(W, x))
-	print 'DENOMINATOR:',  np.sum(np.exp(np.dot(W, x)))
-	return np.exp(np.dot(W[j, :], x)) / np.sum(np.exp(np.dot(W, x)))
+def softmax(X, W):
+	return np.exp(np.dot(W, X)) / np.sum(np.exp(np.dot(W, X)))
 
 
 if (__name__ == '__main__'):
-	X = np.matrix([[1, 2, 3], [0.1, 0.01, 0.001], [3, 3, 2]])
-	W = np.matrix([[4, 5, 6], [7, 8, 9], [4, 2, 1]])
+	X = np.matrix([[1, 2, 3], [0.1, 0.01, 0.001], [3, 7, 2]])
+	W = np.matrix([[4, 1, 6], [7, 8, 9], [4, -4, 1]])
 
-	lll = 0.
-	for i in xrange(3):
-		lll+=softmax(X[:, i], W, i)
-	print 'SOFTMAX:',lll
+	print 'SOFTMAX:', softmax(X, W)
+	print 'SOFTMAX SUM:', np.sum(softmax(X, W))
