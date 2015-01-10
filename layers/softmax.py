@@ -11,7 +11,10 @@ https://chrisjmccormick.wordpress.com/2014/06/13/deep-learning-tutorial-softmax-
 
 
 def softmax(X, W):
-	return np.exp(np.dot(W, X)) / np.sum(np.exp(np.dot(W, X)))
+	f = np.dot(W, X)
+	f -= np.max(f) # Numerical stability
+
+	return np.exp(f) / np.sum(np.exp(f))
 
 
 if (__name__ == '__main__'):
