@@ -7,8 +7,11 @@ import numpy as np
 def logistic_sigmoid(X):
 	return 1. / (1. + np.exp(-X))
 
+# TODO: Recheck gradient of logistic sigmoid
 # see http://feature-space.com/en/post24.html
-# Recheck gradient of logistic sigmoid
+# http://www.willamette.edu/~gorr/classes/cs449/Maple/ActivationFuncs/active.html
+# http://www.ai.mit.edu/courses/6.892/lecture8-html/sld015.htm
+# https://theclevermachine.wordpress.com/2014/09/08/derivation-derivatives-for-common-neural-network-activation-functions/
 def derivative_logistic_sigmoid(X):
 	g = logistic_sigmoid(X)
 
