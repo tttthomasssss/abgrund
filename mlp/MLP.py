@@ -1,0 +1,423 @@
+__author__ = 'thomas'
+import cPickle
+import collections
+import itertools
+import json
+import os
+
+from climin import GradientDescent
+from climin import NonlinearConjugateGradient
+from climin import Lbfgs
+from climin import Rprop
+from climin import RmsProp
+from climin import initialize
+from climin.util import empty_with_views
+from climin.util import iter_minibatches
+from climin.util import shaped_from_flat
+from common import dataset_utils
+from common import paths
+from preprocessing.data_preparation import split_data
+from preprocessing.data_preparation import split_data_train_dev_test
+from sklearn.base import BaseEstimator
+from sklearn.datasets import fetch_20newsgroups
+from sklearn.grid_search import GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import LinearSVC
+from sklearn.utils.extmath import safe_sparse_dot
+from utils import path_utils
+import numpy as np
+
+from base import activation
+from base import regularisation as reg
+from base import utils
+
+# TODO: Early stopping when validation error doesnt go down for a number of specified epochs
+#		Write Params to disk / Read params from disk
+#		Not yet clear if Dropout is implemented correctly
+#		Split predict_proba into forward_propagation and predict_propa to become more stateless
+#		Backprop into input vectors!!!
+#		Gradient Check
+#		Variable depth (currently only supports 1 hidden layer and will very likely fall over with more)
+class MLP(BaseEstimator):
+	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=True,
+				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
+				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
+				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', **optimiser_kwargs):
+		self.random_state_ = self._create_random_state(random_state)
+		self.activations_ = []
+		self.shape_ = shape
+		self.W_flat_ = self._initialise_weights(W_init, activation_fn)
+		self.activation_fn, self.deriv_activation_fn = activation.get_activation_fn_for_string(activation_fn)
+		self.prediction_fn, self.deriv_prediction_fn = activation.get_prediction_fn_for_string(prediction_fn)
+		self.optimiser = optimiser
+		self.optimiser_kwargs = optimiser_kwargs
+		self.gradient_check_ = gradient_check
+		self.lambda_ = lambda_
+		self.regularisation_, self.deriv_regularisation_ = reg.get_regularisation_fn_for_string(regularisation)
+		self.max_weight_norm_ = max_weight_norm
+		self.dropout_masks_ = self._create_dropout_masks(dropout_proba)
+		self.dropout_proba_ = dropout_proba
+		self.max_epochs_ = np.inf if max_epochs is None or max_epochs < 0 else max_epochs
+		self.improvement_threshold_ = improvement_threshold
+		self.patience_ = patience
+		self.W_best_flat_ = np.array([])
+		self.validation_frequency_ = validation_frequency
+		self.loss_history_ = []
+		self.mini_batch_size_ = mini_batch_size
+		self.num_labels_ = 0
+
+	# Forward Propagation phase
+	def predict_proba(self, X, W=None):
+		W = self.W_flat_ if W is None else W
+		self.activations_ = [X]
+		views = shaped_from_flat(W, self.shape_)
+		dropout_iterator = iter(self.dropout_masks_)
+
+		# Forward Propagation through hidden layers
+		for i in xrange(0, len(self.shape_) - 3, 2):
+			W = views[i]
+			b = views[i + 1]
+
+			# Dropout
+			if (len(self.dropout_masks_) > 0):
+				dropout_mask = next(dropout_iterator)
+				if (dropout_mask is not None):
+					W = W * dropout_mask[:, np.newaxis]
+
+			# Linear Transformation
+			a = safe_sparse_dot(X, W) + b # for multiple hidden layers having X here would screw up things
+
+			# Apply Non-Linearity
+			g = self.activation_fn(a)
+
+			self.activations_.append(g)
+
+		W = views[-2]
+		b = views[-1]
+
+		# Prediction - Dropout
+		if (len(self.dropout_masks_) > 0):
+			dropout_mask = next(dropout_iterator)
+			if (dropout_mask is not None):
+				W = W * dropout_mask[:, np.newaxis]
+
+		# Prediction - Linear Transformation
+		a = safe_sparse_dot(self.activations_[-1], W) + b
+
+		# Predict!
+		g = self.prediction_fn(a)
+
+		self.activations_.append(g)
+
+		return g
+
+	def predict(self, X):
+		return np.argmax(self.predict_proba(X), axis=1)
+
+	def loss(self, W, X, y):
+		W = self.W_flat_ if W is None else W
+		predictions = self.predict_proba(X, W)
+		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_labels_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
+
+		# Add regularisation
+		reg = self.regularisation_(self.lambda_, W, self.shape_)
+		loss += (reg / (X.shape[0] * 2))
+
+		return loss
+
+	def fit(self, X, y, X_valid=None, y_valid=None):
+		self.num_labels_ = np.unique(y).shape[0]
+		args = self._get_input_chain(X, y)
+		self.optimiser_kwargs['args'] = args
+		self.optimiser_kwargs['wrt'] = self.W_flat_
+		self.optimiser_kwargs['fprime'] = self.dLoss_dW
+		if (self.optimiser in ['lbfgs', 'nonlinearcg']):
+			self.optimiser_kwargs['f'] = self.loss
+
+		opt = utils.get_optimiser_for_string(self.optimiser, **self.optimiser_kwargs)
+
+		#W_history = []
+		self.loss_history_ = []
+		min_loss = np.inf
+		min_loss_idx = np.inf
+		curr_patience = self.patience_
+		validation_loss = np.inf
+		self.W_best_flat_ = self.W_flat_
+
+		print '### %s ###' % (self.optimiser,)
+		print 'Init Loss:', mlp.loss(None, X_valid, y_valid)
+		y_pred = np.argmax(mlp.predict_proba(X_valid), axis=1)
+		print 'Init Accuracy:', accuracy_score(y_valid, y_pred)
+		for info in opt:
+			# Check for validation loss
+			if (info['n_iter'] % self.validation_frequency_ == 0):
+				validation_loss = mlp.loss(opt.wrt, X_valid, y_valid)
+				self.loss_history_.append(validation_loss)
+				print '\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], mlp.loss(None, X, y), validation_loss, curr_patience)
+				#W_history.append(opt.wrt)
+
+				curr_patience -= 1
+
+				if (validation_loss < min_loss * self.improvement_threshold_):
+					min_loss = validation_loss
+					#min_loss_idx = len(W_history) - 1
+					self.W_best_flat_ = opt.wrt
+					curr_patience = self.patience_
+
+			# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
+			if (self.max_weight_norm_ is not None):
+				curr_norm = np.linalg.norm(self.W_flat_)
+				if (curr_norm > self.max_weight_norm_):
+					self.W_flat_ *= (self.max_weight_norm_ / np.linalg.norm(self.W_flat_))
+
+			# Stopping criterion met?
+			if (self._stopping_criterion(info['n_iter'], curr_patience, validation_loss)):
+				break
+
+		y_pred = np.argmax(mlp.predict_proba(X_valid, W=opt.wrt), axis=1)
+		print 'Final Loss:', mlp.loss(opt.wrt, X_valid, y_valid)
+		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
+
+		#y_pred = np.argmax(mlp.predict_proba(X_valid, W_history[min_loss_idx]), axis=1)
+		#y_pred_train = np.argmax(mlp.predict_proba(X, W_history[min_loss_idx]), axis=1)
+		#print 'Optimal Loss:', mlp.loss(W_history[min_loss_idx], X_valid, y_valid)
+		#print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
+		#print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
+		y_pred = np.argmax(mlp.predict_proba(X_valid, self.W_best_flat_), axis=1)
+		y_pred_train = np.argmax(mlp.predict_proba(X, self.W_best_flat_), axis=1)
+		print 'Optimal Loss:', mlp.loss(self.W_best_flat_, X_valid, y_valid)
+		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
+		print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
+		self.W_flat_ = self.W_best_flat_ # TODO: halfing of weights during prediction potentially needs to happen here!!!
+
+	def _stopping_criterion(self, curr_iter, curr_patience, loss):
+		if (np.isinf(curr_patience)):
+			return curr_iter > self.max_epochs_ or loss <= 0
+		else:
+			return curr_patience <= 0 or loss <= 0
+
+	def _get_input_chain(self, X, y):
+		if (self.mini_batch_size_ <= 0):
+			return itertools.repeat(([X, utils.one_hot(y, s=self.num_labels_)], {}))
+		else:
+			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_labels_)], self.mini_batch_size_, [0, 0]))
+
+	def _gradient_check(self, W, X, y, eps=10e-4): # TODO: Not quite right yet
+		loss1 = self.loss(W + eps, X, y)
+		loss2 = self.loss(W - eps, X, y)
+
+		dLoss_dW_num = (loss1 - loss2) / 2 * eps
+
+		return dLoss_dW_num
+
+	def _initialise_weights(self, W_init, activation_fn):
+		self.W_flat_ = np.empty(self._count_params())
+		views = shaped_from_flat(self.W_flat_, self.shape_)
+		if (W_init == 'xavier'):
+			if (activation_fn == 'sigmoid'):
+				return initialize.randomize_uniform_sigmoid(views, self.random_state_)
+			elif (activation_fn == 'tanh'):
+				return initialize.randomize_uniform_tanh(views, self.random_state_)
+			elif (activation_fn == 'relu'):
+				return initialize.randomize_uniform_relu(views, self.random_state_)
+			else:
+				return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+		else: # Uniform in [0 1]
+			return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+
+	def _count_params(self):
+		n_params = 0
+		for x in self.shape_:
+			if (isinstance(x, collections.Iterable)):
+				n_params += (x[0] * x[1])
+			else:
+				n_params += x
+
+		return n_params
+
+	def _create_random_state(self, random_state):
+		if (isinstance(random_state, np.random.RandomState)):
+			return random_state
+		elif (isinstance(random_state, int)):
+			return np.random.RandomState(seed=random_state)
+		else:
+			return np.random.RandomState(seed=1105)
+
+	def _create_dropout_masks(self, dropout_proba):
+		dropout_masks = []
+		if (dropout_proba is not None):
+			if (isinstance(dropout_proba, float)):
+				for i in xrange(0, len(self.shape_) - 1, 2):
+					size = (self.shape_[i][0],)
+					dropout_masks.append(self.random_state_.binomial(1, dropout_proba, size))
+			else:
+				for i in xrange(0, len(self.shape_) - 1, 2):
+					p = dropout_proba.pop(0)
+					if (p is not None):
+						size = (self.shape_[i][0],)
+						dropout_masks.append(self.random_state_.binomial(1, p, size))
+					else:
+						dropout_masks.append(None)
+
+		return dropout_masks
+
+	def dLoss_dW(self, W, X, y):
+		views = shaped_from_flat(W, self.shape_)
+
+		# Dropout Gradients
+		if (len(self.dropout_masks_) > 0):
+			gradients_dropout_iterator = reversed(self.dropout_masks_)
+
+		# Prediction of network w.r.t. to current W
+		self.W_flat_ = W
+		y_pred = self.predict_proba(X)
+
+		# Error in last layer
+		e = self.deriv_prediction_fn(y_pred, y)
+
+		# Gradients w.r.t. last layer error
+		de_dW = np.dot(self.activations_[-2].T, e) / self.activations_[-2].shape[0]
+		db_dW = e.mean(axis=0)
+
+		# Add Gradient from Regularisation parameter
+		de_dW += (self.deriv_regularisation_(self.lambda_, views[-2]) / X.shape[0])
+
+		# Dropout during Backprop a.k.a. Backpropout
+		if (len(self.dropout_masks_) > 0):
+			gradients_dropout_mask = next(gradients_dropout_iterator)
+			if (gradients_dropout_mask is not None):
+				de_dW *= gradients_dropout_mask[:, np.newaxis]
+
+		# Collect Gradients from last layer
+		gradients = np.concatenate([de_dW.flatten(), db_dW])
+
+		# Loop through hidden layers
+		for i in xrange(len(self.shape_) - 3, 0, -2):
+			# Weights and bias of next layer
+			W_next = views[i+1]
+
+			# Derivative of activation
+			g = self.activations_[i]
+			dg_dW = self.deriv_activation_fn(g)
+
+			# Error w.r.t. to activation and last weights ("backprop into hidden layer")
+			#e = np.dot(e, W_next.T) * dg_dW
+			e = safe_sparse_dot(e, W_next.T) * dg_dW
+
+			# Gradients for weights w.r.t. backpropped error (e), and forwardpropped activation
+			#de_dW = np.dot(self.activations_[i-1].T, e) / self.activations_[i-1].shape[0]
+			de_dW = safe_sparse_dot(self.activations_[i-1].T, e) / self.activations_[i-1].shape[0]
+			db_dW = e.mean(axis=0)
+
+			# Add Gradient from Regularisation Parameter
+			de_dW += (self.deriv_regularisation_(self.lambda_, views[i-1]) / X.shape[0])
+
+			# Dropout during Backprop a.k.a. Backpropout
+			if (self.dropout_masks_ is not None):
+				gradients_dropout_mask = next(gradients_dropout_iterator)
+				if (gradients_dropout_mask is not None):
+					de_dW *= gradients_dropout_mask[:, np.newaxis]
+
+			# Collect Gradients
+			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
+
+		#if (self.gradient_check_):
+		#	num_gradients = self._gradient_check(W, X, y)
+
+		return gradients
+
+if (__name__ == '__main__'):
+	result_dict = {}
+	#wrt = np.empty(159010)
+	#initialize.randomize_normal(wrt, 0, 1)
+
+	# Infer num params
+	#shapes = [(i,) if isinstance(i, int) else i for i in shapes]
+	#sizes = [np.prod(i) for i in shapes]
+
+	#views = shaped_from_flat(wrt, tmpl)
+	#wrt = initialize.randomize_uniform_sigmoid(views)
+
+	### 20 NEWS GROUPS TEST WITH EXACTLY THE SAME PARAMS AS MNIST
+	dataset = dataset_utils.fetch_20newsgroups_dataset_vectorized(os.path.join(paths.get_dataset_path(), '20newsgroups'), tf_normalisation=True)
+	#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
+	X_train, y_train, X_valid, y_valid, X_test, y_test = split_data_train_dev_test('20newsgroups', dataset, ratio=(0.8, 0.2), random_state=np.random.RandomState(seed=42))
+
+	### SMS SPAM COLLECTION
+	#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), tf_normalisation=True)
+	#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, -1, -1, -1, np.random.RandomState(seed=42))
+
+	######## S K L E A R N   C L A S S I F I E R S
+	print '#### SKLEARN SVM'
+	svm = LinearSVC()
+	svm.fit(X_train, y_train)
+	y_pred = svm.predict(X_test)
+	print '\tAccuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary'))
+	print '################'
+	result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
+	result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+
+	print '#### SKLEARN MNB'
+	mnb = MultinomialNB()
+	mnb.fit(X_train, y_train)
+	y_pred = mnb.predict(X_test)
+	print '\tAccuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary'))
+	print '################'
+	result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
+	result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+	##############################################
+
+	timestamped_foldername = path_utils.timestamped_foldername()
+
+	act_fn = ['tanh']#, 'relu', 'sigmoid']
+	for afn in act_fn:
+
+		print '#### %s ####' % (afn,)
+
+		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), tf_normalisation=True)
+		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), binarize=True)
+
+		X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
+
+		if (afn == 'relu'):
+			gd_params = {'step_rate': 1.0}
+		else:
+			gd_params = {'step_rate': 0.1, 'momentum': 0.95, 'momentum_type': 'nesterov'}
+
+		lbfgs_params = {'n_factors': 10}
+		rmsprop_params = {'step_rate':0.01, 'decay':0.9, 'momentum':0, 'step_adapt':False, 'step_rate_min':0, 'step_rate_max':np.inf}
+		adadelta_params = {'step_rate':0.1, 'decay':0.9, 'momentum':0, 'offset':1e-4}
+		adam_params = {'step_rate':0.1, 'decay':1-1e-8, 'decay_mom1':0.1, 'decay_mom2':0.001, 'momentum':0, 'offset':1e-8}
+		rprop_params = {'step_shrink':0.5, 'step_grow':1.2, 'min_step':1e-6, 'max_step':1, 'changes_max':0.1}
+		nonlinearcg_params = {'min_grad':1e-6}
+
+		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		#mlp.W_flat_ = np.empty(4358002)
+
+
+		#initialize.randomize_normal(mlp.W_flat_, 0, 1)
+		#views = shaped_from_flat(mlp.W_flat_, mlp.shape_)
+		#mlp.W_flat_ = ifn(views)
+
+		#mlp.fit(X_train.toarray(), y_train, X_test.toarray(), y_test)
+		mlp.fit(X_train, y_train, X_test, y_test)
+		y_pred = mlp.predict(X_test)
+		result_dict['%s_accuracy' % (afn,)] = accuracy_score(y_test, y_pred)
+		result_dict['%s_f1_score' % (afn,)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+
+		# Plot learning curve & weight matrix
+		utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results', 'learning_curve', afn))
+		utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results', 'weight_matrices', afn))
+
+	####################
+
+	out_path = os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results')
+	fname = 'results.json'
+
+	if (not os.path.exists(out_path)):
+		os.makedirs(out_path)
+
+	json.dump(result_dict, open(os.path.join(out_path, fname), 'wb'))
