@@ -3,7 +3,7 @@ __author__ = 'thomas'
 
 import numpy as np
 
-
+# TODO: Probably delete the whole shit
 def logistic_sigmoid(X):
 	return 1. / (1. + np.exp(-X))
 

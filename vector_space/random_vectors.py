@@ -11,14 +11,19 @@ class RandomVectorSpaceModel(object):
 		self.random_state_ = random_state
 		self.vsm_ = {}
 		self.vocab_ = set()
+		self.vocab_size_ = None
 
 	def construct(self, data, initialise_immediately=False):
-		self.vocab_ = reduce(lambda vocab, doc: vocab | set(doc), data, set())
+		self.vocab_ = sorted(reduce(lambda vocab, doc: vocab | set(doc), data, set()))
 
 		if (initialise_immediately):
 			for w in self.vocab_:
 				self.vsm_[w] = self.random_state_.randn(self.ndim_,)
-		print len(self.vocab_)
+
+			self._vocab_size_ = len(self.vocab_)
+
+	def __len__(self):
+		return self.vocab_size_ if self.vocab_size_ is not None else len(self.vocab_)
 
 	def __getitem__(self, item):
 		if (item not in self.vsm_):

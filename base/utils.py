@@ -26,10 +26,12 @@ def one_hot(x, s=20):# 10
 
 
 def num_instances(X):
-	if (isinstance(X, list)):
-		return len(X)
-	else:
-		return X.shape[0]
+	return len(X) if isinstance(X, list) else X.shape[0]
+
+
+def gradient_check(nn, X, y, epsilon=0.001, error_threshold=0.01):
+	#http://www.wildml.com/2015/09/recurrent-neural-networks-tutorial-part-2-implementing-a-language-model-rnn-with-python-numpy-and-theano/
+	gradients = nn.dLoss_dW()
 
 
 def get_optimiser_for_string(optimiser,  **optimiser_kwargs):

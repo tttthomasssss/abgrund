@@ -230,13 +230,17 @@ class RNN(BaseEstimator):
 		views = shaped_from_flat(self.W_flat_, self.shape_)
 		if (W_init == 'xavier'):
 			if (activation_fn == 'sigmoid'):
-				return initialize.randomize_uniform_sigmoid(views, self.random_state_)
+				params = initialize.randomize_uniform_sigmoid(views[1:], self.random_state_)
 			elif (activation_fn == 'tanh'):
-				return initialize.randomize_uniform_tanh(views, self.random_state_)
+				params = initialize.randomize_uniform_tanh(views[1:], self.random_state_)
 			elif (activation_fn == 'relu'):
-				return initialize.randomize_uniform_relu(views, self.random_state_)
+				params = initialize.randomize_uniform_relu(views[1:], self.random_state_)
 			else:
 				return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+
+			# Add Word Vectors to first layer
+			#vsm.asarray()
+			return params
 		else: # Normal in [0 1]
 			return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
 
@@ -291,8 +295,6 @@ class RNN(BaseEstimator):
 		dg_dV = np.zeros(V.shape)
 		db_dV = np.zeros(b_V.shape)
 
-		# TODO: Re-Debug standard backprop in an MLP, then redo this with BPTT
-
 		# Calculate Regularisation Gradients
 		n_instances = utils.num_instances(X)
 		dg_dV += self.deriv_regularisation_(self.lambda_, V) / n_instances
@@ -336,6 +338,10 @@ class RNN(BaseEstimator):
 
 				db_dW += delta_lx # Only the input has a bias, the recurrent layer has not!
 
+				# Backpropagate error signal from x_in to word vector as well
+				# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
+
+
 				delta_one_lower_x = delta_lx
 				delta_one_lower_a = delta_la
 				W_one_lower = W
@@ -368,9 +374,12 @@ if (__name__ == '__main__'):
 	### Word Vectors
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
-	#vsm.construct(data[0])
+	vsm.construct(data[0])
 	gd_params = {'step_rate': 1., 'momentum': 0.95, 'momentum_type': 'nesterov'}
-	rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
+	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
+	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
+
+	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 			  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
 	#rnn.predict_proba(data[0][:1])

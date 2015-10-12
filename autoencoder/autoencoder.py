@@ -39,7 +39,7 @@ from vector_space.random_vectors import RandomVectorSpaceModel
 # TODO:
 #	- Support Multiple Layers
 #	- Really nothing more than just started...
-class RAE(BaseEstimator):
+class AE(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=True,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
@@ -74,12 +74,9 @@ class RAE(BaseEstimator):
 	def _lookup_word(self, w):
 		return self.word_vector_model_[w].reshape(-1, 1)# if w in self.word_vector_model_ else np.ones((self.word_vector_dim_, 1))
 
-	def _forward_propagation(self, x, W, b_w, V, b_v):
+	def _forward_propagation(self, x, W_enc, b_W_enc, W_dec, b_W_dec):
 		curr_activations = []
 		curr_predictions = []
-
-		# Initial hidden state
-		h = self.h_initial_
 
 		# Forward Propagation through whole sequence
 		for x_i in x:
@@ -87,21 +84,28 @@ class RAE(BaseEstimator):
 			# Lookup word vector in model
 			v = self._lookup_word(x_i)
 
-			# Stack current input word vector (x_i) and previous hidden state h (t_i-1) together
-			s = np.concatenate((v, h))
+			### Encode ###
 
-			# Linear Transformation (W contains the weights of the recurrent input as well as the standard input)
-			a = np.dot(W.T, s) + b_w
+			# Linear Transformation
+			a_enc = np.dot(W_enc.T, v) + b_W_enc
 
 			# Apply Non-Linearity
-			h = self.activation_fn(a)
+			h_enc = self.activation_fn(a_enc)
 
-			# Current prediction (to get a local error signal and to overcome vanishing gradient)
-			p_a = np.dot(V.T, h) + b_v
-			p = self.prediction_fn(p_a.T) # TODO: Return the predictions along with the activations
+			### Decode ###
 
-			curr_activations.insert(0, (v, a, h))
-			curr_predictions.insert(0, (p_a.T, p))
+			# Linear Transformation
+			a_dec = np.dot(W_dec.T, h_enc) + b_W_dec
+
+			# Apply Non-Linearity
+			h_dec = self.activation_fn(a_dec)
+
+			#h_dec is the prediction
+			# Probably read this Tutorial first...http://ufldl.stanford.edu/tutorial/unsupervised/Autoencoders/
+
+
+			#curr_activations.insert(0, (v, a, h))
+			#curr_predictions.insert(0, (p_a.T, p))
 
 		return curr_activations, curr_predictions
 
@@ -120,7 +124,7 @@ class RAE(BaseEstimator):
 
 		# For all Documents
 		for x in X:
-			_, pred = self._forward_propagation(x, W, b_w, V, b_v)
+			_, pred = self._forward_propagation(x, W_enc, b_W_enc, W_dec, b_W_dec)
 			y_pred.append(np.squeeze(pred[1][-1]))
 
 		return np.array(y_pred)
@@ -369,11 +373,11 @@ if (__name__ == '__main__'):
 	vsm = RandomVectorSpaceModel()
 	#vsm.construct(data[0])
 	gd_params = {'step_rate': 1., 'momentum': 0.95, 'momentum_type': 'nesterov'}
-	rnn = RAE(shape=[(300, 100), 100, (100, 300), 300], activation_fn='tanh', max_epochs=200, validation_frequency=10,
+	ae = AE(shape=[(50, 20), 20, (20, 50), 50], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 			  word_vector_dim=300, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
 	#rnn.predict_proba(data[0][:1])
-	rnn.fit(data[0], y_train, data[2], y_valid)
-	y_pred = rnn.predict(data[4])
+	ae.fit(data[0], y_train, data[2], y_valid)
+	y_pred = ae.predict_proba(data[0])
 
 	print '[RNN VSM] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted'))
