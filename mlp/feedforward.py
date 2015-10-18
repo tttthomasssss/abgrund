@@ -204,13 +204,41 @@ class MLP(BaseEstimator):
 		else:
 			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_labels_)], self.mini_batch_size_, [0, 0]))
 
-	def _gradient_check(self, W, X, y, eps=10e-4): # TODO: Not quite right yet
-		loss1 = self.loss(W + eps, X, y)
-		loss2 = self.loss(W - eps, X, y)
+	def _gradient_check(self, W, X, y, dg_dW, eps=10e-4, error_threshold=10e-2): # TODO: Not quite right yet
+		# TODO: Take Dropout into account!!!!!!
 
-		dLoss_dW_num = (loss1 - loss2) / 2 * eps
+		it = np.nditer(W, op_flags=['readwrite'])
+		while not it.finished:
+			idx = it.iterindex
+			w_original = W[idx]
+			w_plus = w_original + eps
+			w_minus = w_original - eps
 
-		return dLoss_dW_num
+			# Calculate loss + eps
+			W[idx] = w_plus
+			loss_plus = self.loss(W, X, y)
+
+			# Calculate loss - eps
+			W[idx] = w_minus
+			loss_minus = self.loss(W, X, y)
+
+			# Estimate numerical gradient
+			num_grad = (loss_plus - loss_minus) / (2 * eps)
+
+			W[idx] = w_original
+			dg_dw = dg_dW[idx]
+
+			# Error
+			error = np.abs(num_grad - dg_dw) / np.abs(num_grad + dg_dw)
+
+			if (error > error_threshold):
+				print('[ERROR]: {}'.format(error))
+			else:
+				print('[INFO]: {}'.format(error))
+
+			it.iternext()
+
+		return True
 
 	def _initialise_weights(self, W_init, activation_fn):
 		self.W_flat_ = np.empty(self._count_params())
@@ -265,6 +293,8 @@ class MLP(BaseEstimator):
 
 	def dLoss_dW(self, W, X, y):
 		views = shaped_from_flat(W, self.shape_)
+
+		# TODO: Recheck Backpropagation!!!!!!!!!!!! (http://neuralnetworksanddeeplearning.com/chap2.html)
 
 		# Dropout Gradients
 		if (len(self.dropout_masks_) > 0):
@@ -323,8 +353,11 @@ class MLP(BaseEstimator):
 			# Collect Gradients
 			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
 
-		#if (self.gradient_check_):
-		#	num_gradients = self._gradient_check(W, X, y)
+		if (self.gradient_check_):
+			passed = self._gradient_check(W, X, y, gradients)
+
+			if (not passed):
+				print('Shit!!!')
 
 		return gradients
 
