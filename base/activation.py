@@ -1,4 +1,5 @@
 __author__ = 'thomas'
+from scipy.special import expit
 import numpy as np
 
 
@@ -26,12 +27,14 @@ def deriv_softmax(y_pred, y_true):
 	return y_pred - y_true
 
 
-def sigmoid(x):
+def sigmoid(x):# TODO: use scipy.special.expit!!!
+	return expit(x)
+	'''
 	g = np.zeros(x.shape) # Numerical Stability, see: http://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick/
 	g[x >= 0] = 1 / (1 + np.exp(-x[x >= 0]))
 	g[x < 0] = 1 / (1 + np.exp(x[x < 0]))
 	return g
-
+	'''
 
 def deriv_sigmoid(x):
 	sigm = sigmoid(x)
