@@ -46,7 +46,6 @@ class MLP(BaseEstimator):
 				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
 				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', **optimiser_kwargs):
 		self.random_state_ = self._create_random_state(random_state)
-		self.activations_ = []
 		self.shape_ = shape
 		self.W_flat_ = self._initialise_weights(W_init, activation_fn)
 		self.activation_fn, self.deriv_activation_fn = activation.get_activation_fn_for_string(activation_fn)
@@ -57,8 +56,8 @@ class MLP(BaseEstimator):
 		self.lambda_ = lambda_
 		self.regularisation_, self.deriv_regularisation_ = reg.get_regularisation_fn_for_string(regularisation)
 		self.max_weight_norm_ = max_weight_norm
-		self.dropout_masks_ = self._create_dropout_masks(dropout_proba)
-		self.dropout_proba_ = dropout_proba
+		self.dropout_proba_ = self._create_dropout_prediction_proba(dropout_proba)
+		self.dropout_masks_ = self._create_dropout_masks(dropout_proba) # Be careful with dropout_proba, this fn modifies it
 		self.max_epochs_ = np.inf if max_epochs is None or max_epochs < 0 else max_epochs
 		self.improvement_threshold_ = improvement_threshold
 		self.patience_ = patience
@@ -66,52 +65,56 @@ class MLP(BaseEstimator):
 		self.validation_frequency_ = validation_frequency
 		self.loss_history_ = []
 		self.mini_batch_size_ = mini_batch_size
-		self.num_labels_ = 0
+		self.num_classes_ = 0
 
 	# Forward Propagation phase
-	def predict_proba(self, X, W=None):
+	def _forward_propagation(self, X, W=None, dropout_mode='fit'):
 		W = self.W_flat_ if W is None else W
-		self.activations_ = [X]
+		activations = [X]
+		magnitudes = []
 		views = shaped_from_flat(W, self.shape_)
-		dropout_iterator = iter(self.dropout_masks_)
+		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
 		# Forward Propagation through hidden layers
 		for i in xrange(0, len(self.shape_) - 3, 2):
 			W = views[i]
-			b = views[i + 1]
+			b = views[i+1]
 
 			# Dropout
-			if (len(self.dropout_masks_) > 0):
-				dropout_mask = next(dropout_iterator)
-				if (dropout_mask is not None):
-					W = W * dropout_mask[:, np.newaxis]
+			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
+			W = self._perform_dropout(W, dropout_mode, dropout_mask)
 
 			# Linear Transformation
-			a = safe_sparse_dot(X, W) + b # for multiple hidden layers having X here would screw up things
+			z = safe_sparse_dot(activations[-1], W) + b # for multiple hidden layers having X here would screw up things
 
 			# Apply Non-Linearity
-			g = self.activation_fn(a)
+			a = self.activation_fn(z)
 
-			self.activations_.append(g)
+			activations.append(a)
+			magnitudes.append(z)
 
 		W = views[-2]
 		b = views[-1]
 
 		# Prediction - Dropout
-		if (len(self.dropout_masks_) > 0):
-			dropout_mask = next(dropout_iterator)
-			if (dropout_mask is not None):
-				W = W * dropout_mask[:, np.newaxis]
+		dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
+		W = self._perform_dropout(W, dropout_mode, dropout_mask)
 
 		# Prediction - Linear Transformation
-		a = safe_sparse_dot(self.activations_[-1], W) + b
+		z = safe_sparse_dot(activations[-1], W) + b
 
 		# Predict!
-		g = self.prediction_fn(a)
+		a = self.prediction_fn(z)
 
-		self.activations_.append(g)
+		activations.append(a)
+		magnitudes.append(z)
 
-		return g
+		return activations, magnitudes
+
+	def predict_proba(self, X, W=None):
+		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
+
+		return activations[-1]
 
 	def predict(self, X):
 		return np.argmax(self.predict_proba(X), axis=1)
@@ -119,7 +122,7 @@ class MLP(BaseEstimator):
 	def loss(self, W, X, y):
 		W = self.W_flat_ if W is None else W
 		predictions = self.predict_proba(X, W)
-		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_labels_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
+		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
 
 		# Add regularisation
 		reg = self.regularisation_(self.lambda_, W, self.shape_)
@@ -128,7 +131,7 @@ class MLP(BaseEstimator):
 		return loss
 
 	def fit(self, X, y, X_valid=None, y_valid=None):
-		self.num_labels_ = np.unique(y).shape[0]
+		self.num_classes_ = np.unique(y).shape[0]
 		args = self._get_input_chain(X, y)
 		self.optimiser_kwargs['args'] = args
 		self.optimiser_kwargs['wrt'] = self.W_flat_
@@ -166,6 +169,13 @@ class MLP(BaseEstimator):
 					self.W_best_flat_ = opt.wrt
 					curr_patience = self.patience_
 
+			# Gradient Check
+			if (self.gradient_check_):
+				passed = self._gradient_check(opt.wrt, X, y)
+
+				if (not passed):
+					print('Shit!!!')
+
 			# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 			if (self.max_weight_norm_ is not None):
 				curr_norm = np.linalg.norm(self.W_flat_)
@@ -200,12 +210,14 @@ class MLP(BaseEstimator):
 
 	def _get_input_chain(self, X, y):
 		if (self.mini_batch_size_ <= 0):
-			return itertools.repeat(([X, utils.one_hot(y, s=self.num_labels_)], {}))
+			return itertools.repeat(([X, utils.one_hot(y, s=self.num_classes_)], {}))
 		else:
-			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_labels_)], self.mini_batch_size_, [0, 0]))
+			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_classes_)], self.mini_batch_size_, [0, 0]))
 
-	def _gradient_check(self, W, X, y, dg_dW, eps=10e-4, error_threshold=10e-2): # TODO: Not quite right yet
+	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Not quite right yet
 		# TODO: Take Dropout into account!!!!!!
+
+		dg_dW = self.dLoss_dW(W, X, utils.one_hot(y, self.num_classes_))
 
 		it = np.nditer(W, op_flags=['readwrite'])
 		while not it.finished:
@@ -273,6 +285,23 @@ class MLP(BaseEstimator):
 		else:
 			return np.random.RandomState(seed=1105)
 
+	def _perform_dropout(self, W, dropout_mode, dropout_mask):
+		if (dropout_mask is not None):
+			if (dropout_mode == 'fit'):
+				W = W * dropout_mask[:, np.newaxis]
+			else:
+				W = W * dropout_mask # In that case its a probability
+
+		return W
+
+	def _create_dropout_prediction_proba(self, dropout_proba):
+		l = []
+		for p in dropout_proba:
+			p_dropout = 1. - p if p is not None else 1.
+			l.append(p_dropout)
+
+		return l
+
 	def _create_dropout_masks(self, dropout_proba):
 		dropout_masks = []
 		if (dropout_proba is not None):
@@ -302,17 +331,28 @@ class MLP(BaseEstimator):
 
 		# Prediction of network w.r.t. to current W
 		self.W_flat_ = W
-		y_pred = self.predict_proba(X)
+		activations, magnitudes = self._forward_propagation(X)
 
-		# Error in last layer
-		e = self.deriv_prediction_fn(y_pred, y)
+		# Pop weights and bias for last layer
+		b = views.pop()
+		W = views.pop()
+
+		# Pop activations and activation magnitudes
+		y_pred = activations.pop() # Thats the prediction
+		z = magnitudes.pop()
+
+		# BP 1: Error in last layer
+		delta_l = self.deriv_prediction_fn(y_pred, y) * self.deriv_activation_fn(z)
+
+		# Pop another activation
+		a = activations.pop()
 
 		# Gradients w.r.t. last layer error
-		de_dW = np.dot(self.activations_[-2].T, e) / self.activations_[-2].shape[0]
-		db_dW = e.mean(axis=0)
+		de_dW = np.dot(a.T, delta_l) / utils.num_instances(a)
+		db_dW = delta_l.mean(axis=0)
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, views[-2]) / X.shape[0])
+		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(X))
 
 		# Dropout during Backprop a.k.a. Backpropout
 		if (len(self.dropout_masks_) > 0):
@@ -324,12 +364,48 @@ class MLP(BaseEstimator):
 		gradients = np.concatenate([de_dW.flatten(), db_dW])
 
 		# Loop through hidden layers
+		views.append(W)
+		views.append(b)
+		while len(activations) > 0:
+			_ = views.pop() # Pop Bias term for lower layer
+			W_next = views.pop() # Weights at lower (=next) layer
+
+			b_curr = views.pop() # Pop Bias term for current layer
+			W_curr = views.pop() # Weights at current layer
+
+			a = activations.pop()
+			z = magnitudes.pop()
+
+			# BP 2: delta^(l) at hidden layer: backprop error signal
+			delta_l = safe_sparse_dot(delta_l, W_next.T) * self.deriv_activation_fn(z)
+
+			# BP 4: Gradients for weights w.r.t. backpropped error (delta_l) and forwardpropped activation
+			de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
+			db_dW = delta_l.mean(axis=0)
+
+			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X))
+
+			# Dropout during Backprop a.k.a. Backpropout
+			if (self.dropout_masks_ is not None):
+				gradients_dropout_mask = next(gradients_dropout_iterator)
+				if (gradients_dropout_mask is not None):
+					de_dW *= gradients_dropout_mask[:, np.newaxis]
+
+			# Collect Gradients
+			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
+
+			# Push W_curr back to views so they can become W_next for the next iteration
+			views.append(W_curr)
+			views.append(b_curr)
+
+		'''
+		# Loop through hidden layers
 		for i in xrange(len(self.shape_) - 3, 0, -2):
 			# Weights and bias of next layer
 			W_next = views[i+1]
 
 			# Derivative of activation
-			g = self.activations_[i]
+			a = activations.pop()
 			dg_dW = self.deriv_activation_fn(g)
 
 			# Error w.r.t. to activation and last weights ("backprop into hidden layer")
@@ -352,12 +428,7 @@ class MLP(BaseEstimator):
 
 			# Collect Gradients
 			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
-
-		if (self.gradient_check_):
-			passed = self._gradient_check(W, X, y, gradients)
-
-			if (not passed):
-				print('Shit!!!')
+		'''
 
 		return gradients
 
