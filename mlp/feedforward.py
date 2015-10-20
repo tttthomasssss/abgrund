@@ -73,10 +73,13 @@ class MLP(BaseEstimator):
 		views = shaped_from_flat(W, self.shape_)
 		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
+		b_pred = views.pop(-1)
+		W_pred = views.pop(-1)
+
 		# Forward Propagation through hidden layers
-		for i in xrange(0, len(self.shape_) - 3, 2):
-			W = views[i]
-			b = views[i+1]
+		while len(views) > 1:
+			b = views.pop()
+			W = views.pop()
 
 			# Dropout
 			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
@@ -91,15 +94,12 @@ class MLP(BaseEstimator):
 			activations.append(a)
 			magnitudes.append(z)
 
-		W = views[-2]
-		b = views[-1]
-
 		# Prediction - Dropout
 		dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
-		W = self._perform_dropout(W, dropout_mode, dropout_mask)
+		W_pred = self._perform_dropout(W_pred, dropout_mode, dropout_mask)
 
 		# Prediction - Linear Transformation
-		z = safe_sparse_dot(activations[-1], W) + b
+		z = safe_sparse_dot(activations[-1], W_pred) + b_pred
 
 		# Predict!
 		a = self.prediction_fn(z)
@@ -150,15 +150,15 @@ class MLP(BaseEstimator):
 		self.W_best_flat_ = self.W_flat_
 
 		print '### %s ###' % (self.optimiser,)
-		print 'Init Loss:', mlp.loss(None, X_valid, y_valid)
-		y_pred = np.argmax(mlp.predict_proba(X_valid), axis=1)
+		print 'Init Loss:', self.loss(None, X_valid, y_valid)
+		y_pred = self.predict(X_valid)
 		print 'Init Accuracy:', accuracy_score(y_valid, y_pred)
 		for info in opt:
 			# Check for validation loss
 			if (info['n_iter'] % self.validation_frequency_ == 0):
-				validation_loss = mlp.loss(opt.wrt, X_valid, y_valid)
+				validation_loss = self.loss(opt.wrt, X_valid, y_valid)
 				self.loss_history_.append(validation_loss)
-				print '\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], mlp.loss(None, X, y), validation_loss, curr_patience)
+				print '\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], self.loss(opt.wrt, X, y), validation_loss, curr_patience)
 				#W_history.append(opt.wrt)
 
 				curr_patience -= 1
@@ -186,21 +186,21 @@ class MLP(BaseEstimator):
 			if (self._stopping_criterion(info['n_iter'], curr_patience, validation_loss)):
 				break
 
-		y_pred = np.argmax(mlp.predict_proba(X_valid, W=opt.wrt), axis=1)
-		print 'Final Loss:', mlp.loss(opt.wrt, X_valid, y_valid)
-		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
+		#y_pred = np.argmax(mlp.predict_proba(X_valid, W=opt.wrt), axis=1)
+		#print 'Final Loss:', mlp.loss(opt.wrt, X_valid, y_valid)
+		#print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
 
 		#y_pred = np.argmax(mlp.predict_proba(X_valid, W_history[min_loss_idx]), axis=1)
 		#y_pred_train = np.argmax(mlp.predict_proba(X, W_history[min_loss_idx]), axis=1)
 		#print 'Optimal Loss:', mlp.loss(W_history[min_loss_idx], X_valid, y_valid)
 		#print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
 		#print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
-		y_pred = np.argmax(mlp.predict_proba(X_valid, self.W_best_flat_), axis=1)
-		y_pred_train = np.argmax(mlp.predict_proba(X, self.W_best_flat_), axis=1)
-		print 'Optimal Loss:', mlp.loss(self.W_best_flat_, X_valid, y_valid)
+		self.W_flat_ = self.W_best_flat_ # TODO: halfing of weights during prediction potentially needs to happen here!!!
+		y_pred = self.predict(X_valid)
+		y_pred_train = self.predict(X)
+		print 'Optimal Loss:', self.loss(self.W_best_flat_, X_valid, y_valid)
 		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
 		print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
-		self.W_flat_ = self.W_best_flat_ # TODO: halfing of weights during prediction potentially needs to happen here!!!
 
 	def _stopping_criterion(self, curr_iter, curr_patience, loss):
 		if (np.isinf(curr_patience)):
@@ -241,7 +241,7 @@ class MLP(BaseEstimator):
 			dg_dw = dg_dW[idx]
 
 			# Error
-			error = np.abs(num_grad - dg_dw) / np.abs(num_grad + dg_dw)
+			error = np.abs(dg_dw - num_grad) / (np.abs(num_grad) + np.abs(dg_dw))
 
 			if (error > error_threshold):
 				print('[ERROR]: {}'.format(error))
@@ -296,9 +296,10 @@ class MLP(BaseEstimator):
 
 	def _create_dropout_prediction_proba(self, dropout_proba):
 		l = []
-		for p in dropout_proba:
-			p_dropout = 1. - p if p is not None else 1.
-			l.append(p_dropout)
+		if (dropout_proba is not None):
+			for p in dropout_proba:
+				p_dropout = 1. - p if p is not None else 1.
+				l.append(p_dropout)
 
 		return l
 
@@ -325,7 +326,7 @@ class MLP(BaseEstimator):
 		views = shaped_from_flat(W, self.shape_)
 
 		# Dropout Gradients
-		if (len(self.dropout_masks_) > 0):
+		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
 			gradients_dropout_iterator = reversed(self.dropout_masks_)
 
 		# Prediction of network w.r.t. to current W
@@ -351,10 +352,10 @@ class MLP(BaseEstimator):
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(X))
+		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(X)) # FIXME: Looks dodgy
 
 		# Dropout during Backprop a.k.a. Backpropout
-		if (len(self.dropout_masks_) > 0):
+		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
 			gradients_dropout_mask = next(gradients_dropout_iterator)
 			if (gradients_dropout_mask is not None):
 				de_dW *= gradients_dropout_mask[:, np.newaxis]
@@ -382,10 +383,10 @@ class MLP(BaseEstimator):
 			de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
 			db_dW = delta_l.mean(axis=0)
 
-			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X))
+			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X)) # FIXME: Looks dodgy
 
 			# Dropout during Backprop a.k.a. Backpropout
-			if (self.dropout_masks_ is not None):
+			if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
 				gradients_dropout_mask = next(gradients_dropout_iterator)
 				if (gradients_dropout_mask is not None):
 					de_dW *= gradients_dropout_mask[:, np.newaxis]
@@ -396,38 +397,6 @@ class MLP(BaseEstimator):
 			# Push W_curr and b_curr back to views so they can become W_next and _ for the next iteration
 			views.append(W_curr)
 			views.append(b_curr)
-
-		'''
-		# Loop through hidden layers
-		for i in xrange(len(self.shape_) - 3, 0, -2):
-			# Weights and bias of next layer
-			W_next = views[i+1]
-
-			# Derivative of activation
-			a = activations.pop()
-			dg_dW = self.deriv_activation_fn(g)
-
-			# Error w.r.t. to activation and last weights ("backprop into hidden layer")
-			#e = np.dot(e, W_next.T) * dg_dW
-			e = safe_sparse_dot(e, W_next.T) * dg_dW
-
-			# Gradients for weights w.r.t. backpropped error (e), and forwardpropped activation
-			#de_dW = np.dot(self.activations_[i-1].T, e) / self.activations_[i-1].shape[0]
-			de_dW = safe_sparse_dot(self.activations_[i-1].T, e) / self.activations_[i-1].shape[0]
-			db_dW = e.mean(axis=0)
-
-			# Add Gradient from Regularisation Parameter
-			de_dW += (self.deriv_regularisation_(self.lambda_, views[i-1]) / X.shape[0])
-
-			# Dropout during Backprop a.k.a. Backpropout
-			if (self.dropout_masks_ is not None):
-				gradients_dropout_mask = next(gradients_dropout_iterator)
-				if (gradients_dropout_mask is not None):
-					de_dW *= gradients_dropout_mask[:, np.newaxis]
-
-			# Collect Gradients
-			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
-		'''
 
 		return gradients
 
@@ -497,7 +466,8 @@ if (__name__ == '__main__'):
 		nonlinearcg_params = {'min_grad':1e-6}
 
 		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
-		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=False, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		#mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=None, activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
 		#mlp.W_flat_ = np.empty(4358002)
 
 
