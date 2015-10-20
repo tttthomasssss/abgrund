@@ -482,7 +482,7 @@ if (__name__ == '__main__'):
 		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), tf_normalisation=True)
 		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), binarize=True)
 
-		X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
+		#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
 
 		if (afn == 'relu'):
 			gd_params = {'step_rate': 1.0}
@@ -506,7 +506,7 @@ if (__name__ == '__main__'):
 		#mlp.W_flat_ = ifn(views)
 
 		#mlp.fit(X_train.toarray(), y_train, X_test.toarray(), y_test)
-		mlp.fit(X_train, y_train, X_test, y_test)
+		mlp.fit(X_train, y_train, X_valid, y_valid)
 		y_pred = mlp.predict(X_test)
 		result_dict['%s_accuracy' % (afn,)] = accuracy_score(y_test, y_pred)
 		result_dict['%s_f1_score' % (afn,)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
