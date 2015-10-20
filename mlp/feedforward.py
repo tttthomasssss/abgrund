@@ -83,7 +83,7 @@ class MLP(BaseEstimator):
 			W = self._perform_dropout(W, dropout_mode, dropout_mask)
 
 			# Linear Transformation
-			z = safe_sparse_dot(activations[-1], W) + b # for multiple hidden layers having X here would screw up things
+			z = safe_sparse_dot(activations[-1], W) + b
 
 			# Apply Non-Linearity
 			a = self.activation_fn(z)
