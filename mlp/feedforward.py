@@ -36,10 +36,8 @@ from base import utils
 # TODO: Early stopping when validation error doesnt go down for a number of specified epochs
 #		Write Params to disk / Read params from disk
 #		Not yet clear if Dropout is implemented correctly
-#		Split predict_proba into forward_propagation and predict_propa to become more stateless
 #		Backprop into input vectors!!!
 #		Gradient Check
-#		Variable depth (currently only supports 1 hidden layer and will very likely fall over with more)
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=True,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
@@ -111,7 +109,7 @@ class MLP(BaseEstimator):
 
 		return activations, magnitudes
 
-	def predict_proba(self, X, W=None):
+	def predict_proba(self, X):
 		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
 
 		return activations[-1]
@@ -121,12 +119,14 @@ class MLP(BaseEstimator):
 
 	def loss(self, W, X, y):
 		W = self.W_flat_ if W is None else W
-		predictions = self.predict_proba(X, W)
+		activations, _ = self._forward_propagation(X, W)
+		predictions = activations[-1]
+
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
 
 		# Add regularisation
 		reg = self.regularisation_(self.lambda_, W, self.shape_)
-		loss += (reg / (X.shape[0] * 2))
+		loss += (reg / (utils.num_instances(X) * 2))
 
 		return loss
 
@@ -264,7 +264,7 @@ class MLP(BaseEstimator):
 				return initialize.randomize_uniform_relu(views, self.random_state_)
 			else:
 				return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
-		else: # Uniform in [0 1]
+		else: # Normal in [0 1]
 			return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
 
 	def _count_params(self):
@@ -321,9 +321,8 @@ class MLP(BaseEstimator):
 		return dropout_masks
 
 	def dLoss_dW(self, W, X, y):
+		# Backprop implemented by following http://neuralnetworksanddeeplearning.com/chap2.html
 		views = shaped_from_flat(W, self.shape_)
-
-		# TODO: Recheck Backpropagation!!!!!!!!!!!! (http://neuralnetworksanddeeplearning.com/chap2.html)
 
 		# Dropout Gradients
 		if (len(self.dropout_masks_) > 0):
@@ -348,8 +347,8 @@ class MLP(BaseEstimator):
 		a = activations.pop()
 
 		# Gradients w.r.t. last layer error
-		de_dW = np.dot(a.T, delta_l) / utils.num_instances(a)
-		db_dW = delta_l.mean(axis=0)
+		de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
+		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
 		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(X))
@@ -394,7 +393,7 @@ class MLP(BaseEstimator):
 			# Collect Gradients
 			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
 
-			# Push W_curr back to views so they can become W_next for the next iteration
+			# Push W_curr and b_curr back to views so they can become W_next and _ for the next iteration
 			views.append(W_curr)
 			views.append(b_curr)
 
@@ -498,7 +497,7 @@ if (__name__ == '__main__'):
 		nonlinearcg_params = {'min_grad':1e-6}
 
 		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
-		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=False, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
 		#mlp.W_flat_ = np.empty(4358002)
 
 
@@ -513,12 +512,12 @@ if (__name__ == '__main__'):
 		result_dict['%s_f1_score' % (afn,)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 
 		# Plot learning curve & weight matrix
-		utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results', 'learning_curve', afn))
-		utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results', 'weight_matrices', afn))
+		utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'learning_curve', afn))
+		utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'weight_matrices', afn))
 
 	####################
 
-	out_path = os.path.join(paths.get_out_path(), 'mlp_smsspamcollection', timestamped_foldername, 'results')
+	out_path = os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results')
 	fname = 'results.json'
 
 	if (not os.path.exists(out_path)):
