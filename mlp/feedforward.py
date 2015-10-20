@@ -110,7 +110,7 @@ class MLP(BaseEstimator):
 		return activations, magnitudes
 
 	def predict_proba(self, X):
-		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
+		activations, _ = self._forward_propagation(X, dropout_mode='predict')
 
 		return activations[-1]
 
@@ -119,7 +119,7 @@ class MLP(BaseEstimator):
 
 	def loss(self, W, X, y):
 		W = self.W_flat_ if W is None else W
-		activations, _ = self._forward_propagation(X, W)
+		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
 		predictions = activations[-1]
 
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
