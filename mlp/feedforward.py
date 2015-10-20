@@ -347,7 +347,7 @@ class MLP(BaseEstimator):
 		a = activations.pop()
 
 		# Gradients w.r.t. last layer error
-		de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
+		de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a) # BP 4: dot product between inputs that caused the error and backpropped error
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
