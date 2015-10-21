@@ -38,6 +38,7 @@ from base import utils
 #		Not yet clear if Dropout is implemented correctly
 #		Backprop into input vectors!!!
 #		Gradient Check
+#		Check if Regularisation is implemented correctly
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=True,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
@@ -352,7 +353,7 @@ class MLP(BaseEstimator):
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(X)) # FIXME: Looks dodgy
+		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(a)) # FIXME: Looks dodgy
 
 		# Dropout during Backprop a.k.a. Backpropout
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
