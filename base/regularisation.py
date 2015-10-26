@@ -14,9 +14,10 @@ def get_regularisation_fn_for_string(regularisation):
 def l2_regularisation(lambda_, W, shape):
 	views = shaped_from_flat(W, shape)
 	reg = 0
-	for i in xrange(len(views)):
-		if (views[i].ndim > 1): # Don't add regularisation for bias term
-			reg += (views[i]**2).sum()
+	while len(views) > 0:
+		W_curr = views.pop()
+		if (W_curr.ndim > 1): # Don't add regularisation for bias term
+			reg += (W_curr**2).sum()
 
 	return reg * lambda_
 
