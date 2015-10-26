@@ -4,6 +4,7 @@ import collections
 import itertools
 import json
 import os
+import sys
 
 from climin import GradientDescent
 from climin import NonlinearConjugateGradient
@@ -28,6 +29,7 @@ from sklearn.svm import LinearSVC
 from sklearn.utils.extmath import safe_sparse_dot
 from utils import path_utils
 import numpy as np
+import scipy as sp
 
 from base import activation
 from base import regularisation as reg
@@ -40,7 +42,7 @@ from base import utils
 #		Gradient Check
 #		Check if Regularisation is implemented correctly
 class MLP(BaseEstimator):
-	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=True,
+	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
 				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', **optimiser_kwargs):
@@ -172,10 +174,11 @@ class MLP(BaseEstimator):
 
 			# Gradient Check
 			if (self.gradient_check_):
-				passed = self._gradient_check(opt.wrt, X, y)
+				passed, diff, error_threshold = self._gradient_check(opt.wrt, X, y)
 
 				if (not passed):
-					print('Shit!!!')
+					print('[WARNING] - Gradient check not passed! Error=%f; Threshold=%f'.format(diff, error_threshold))
+					sys.exit(666)
 
 			# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 			if (self.max_weight_norm_ is not None):
@@ -215,43 +218,24 @@ class MLP(BaseEstimator):
 		else:
 			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_classes_)], self.mini_batch_size_, [0, 0]))
 
-	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Not quite right yet
-		# TODO: Take Dropout into account!!!!!!
-
+	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2):
 		dg_dW = self.dLoss_dW(W, X, utils.one_hot(y, self.num_classes_))
 
-		it = np.nditer(W, op_flags=['readwrite'])
-		while not it.finished:
-			idx = it.iterindex
-			w_original = W[idx]
-			w_plus = w_original + eps
-			w_minus = w_original - eps
+		num_dg_dW = np.zeros(W.shape)
+		perturb = np.zeros(W.shape)
 
-			# Calculate loss + eps
-			W[idx] = w_plus
-			loss_plus = self.loss(W, X, y)
+		for i in xrange(W.shape[0]):
+			perturb[i] = eps
 
-			# Calculate loss - eps
-			W[idx] = w_minus
-			loss_minus = self.loss(W, X, y)
+			loss_plus = self.loss(W + perturb, X, y)
+			loss_minus = self.loss(W - perturb, X, y)
 
-			# Estimate numerical gradient
-			num_grad = (loss_plus - loss_minus) / (2 * eps)
+			num_dg_dW[i] = (loss_plus - loss_minus) / (2 * eps)
+			perturb[i] = 0
 
-			W[idx] = w_original
-			dg_dw = dg_dW[idx]
+		diff = sp.linalg.norm(num_dg_dW - dg_dW) / sp.linalg.norm(num_dg_dW + dg_dW)
 
-			# Error
-			error = np.abs(dg_dw - num_grad) / (np.abs(num_grad) + np.abs(dg_dw))
-
-			if (error > error_threshold):
-				print('[ERROR]: {}'.format(error))
-			else:
-				print('[INFO]: {}'.format(error))
-
-			it.iternext()
-
-		return True
+		return (diff <= error_threshold, diff, error_threshold)
 
 	def _initialise_weights(self, W_init, activation_fn):
 		self.W_flat_ = np.empty(self._count_params())
