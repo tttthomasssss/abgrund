@@ -402,10 +402,6 @@ if (__name__ == '__main__'):
 	#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
 	X_train, y_train, X_valid, y_valid, X_test, y_test = split_data_train_dev_test('20newsgroups', dataset, ratio=(0.8, 0.2), random_state=np.random.RandomState(seed=42))
 
-	### SMS SPAM COLLECTION
-	#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), tf_normalisation=True)
-	#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, -1, -1, -1, np.random.RandomState(seed=42))
-
 	######## S K L E A R N   C L A S S I F I E R S
 	print '#### SKLEARN SVM'
 	svm = LinearSVC()
@@ -432,11 +428,6 @@ if (__name__ == '__main__'):
 	for afn in act_fn:
 
 		print '#### %s ####' % (afn,)
-
-		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), tf_normalisation=True)
-		#dataset = dataset_utils.fetch_sms_spam_collection_dataset_vectorized(os.path.join(paths.get_dataset_path(), 'smsspamcollection/SMSSpamCollection'), binarize=True)
-
-		#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
 
 		if (afn == 'relu'):
 			gd_params = {'step_rate': 1.0}
