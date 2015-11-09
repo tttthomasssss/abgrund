@@ -151,7 +151,7 @@ class MLP(BaseEstimator):
 			if (info['n_iter'] % self.validation_frequency_ == 0):
 				validation_loss = self.loss(opt.wrt, X_valid, y_valid)
 				self.loss_history_.append(validation_loss)
-				print('\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]'.format(info['n_iter'], self.loss(opt.wrt, X, y), validation_loss, curr_patience))
+				print('\tIteration={}; Training Loss={:.4f}; Validation Loss={:.4f}[patience={}]'.format(info['n_iter'], self.loss(opt.wrt, X, y), validation_loss, curr_patience))
 				#W_history.append(opt.wrt)
 
 				curr_patience -= 1
@@ -397,7 +397,7 @@ if (__name__ == '__main__'):
 	svm = LinearSVC()
 	svm.fit(X_train, y_train)
 	y_pred = svm.predict(X_test)
-	print('\tAccuracy: %f; F1-Score: %f'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
 	print('################')
 	result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
 	result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
@@ -406,7 +406,7 @@ if (__name__ == '__main__'):
 	mnb = MultinomialNB()
 	mnb.fit(X_train, y_train)
 	y_pred = mnb.predict(X_test)
-	print('\tAccuracy: %f; F1-Score: %f'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
 	print ('################')
 	result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
 	result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
@@ -433,7 +433,7 @@ if (__name__ == '__main__'):
 
 		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
 		#mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
-		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=None, activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
 		#mlp.W_flat_ = np.empty(4358002)
 
 
@@ -444,8 +444,8 @@ if (__name__ == '__main__'):
 		#mlp.fit(X_train.toarray(), y_train, X_test.toarray(), y_test)
 		mlp.fit(X_train, y_train, X_valid, y_valid)
 		y_pred = mlp.predict(X_test)
-		result_dict['%s_accuracy' % (afn,)] = accuracy_score(y_test, y_pred)
-		result_dict['%s_f1_score' % (afn,)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+		result_dict['{}_accuracy'.format(afn)] = accuracy_score(y_test, y_pred)
+		result_dict['{}_f1_score'.format(afn)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 
 		# Plot learning curve & weight matrix
 		utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'learning_curve', afn))
