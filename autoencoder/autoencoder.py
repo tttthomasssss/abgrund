@@ -1,5 +1,5 @@
 __author__ = 'thomas'
-import cPickle
+import pickle
 import collections
 import itertools
 import json
@@ -162,16 +162,16 @@ class AE(BaseEstimator):
 		validation_loss = np.inf
 		self.W_best_flat_ = self.W_flat_
 
-		print '### %s ###' % (self.optimiser,)
-		print 'Init Loss:', self.loss(None, X_valid, y_valid)
+		print('### %s ###' % (self.optimiser,))
+		print('Init Loss:', self.loss(None, X_valid, y_valid))
 		y_pred = np.argmax(self.predict_proba(X_valid), axis=1)
-		print 'Init Accuracy:', accuracy_score(y_valid, y_pred)
+		print('Init Accuracy:', accuracy_score(y_valid, y_pred))
 		for info in opt:
 			# Check for validation loss
 			if (info['n_iter'] % self.validation_frequency_ == 0):
 				validation_loss = self.loss(opt.wrt, X_valid, y_valid)
 				self.loss_history_.append(validation_loss)
-				print '\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], self.loss(None, X, y), validation_loss, curr_patience)
+				print('\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], self.loss(None, X, y), validation_loss, curr_patience))
 				#W_history.append(opt.wrt)
 
 				curr_patience -= 1
@@ -193,8 +193,8 @@ class AE(BaseEstimator):
 				break
 
 		y_pred = np.argmax(self.predict_proba(X_valid, W=opt.wrt), axis=1)
-		print 'Final Loss:', self.loss(opt.wrt, X_valid, y_valid)
-		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
+		print('Final Loss:', self.loss(opt.wrt, X_valid, y_valid))
+		print('Final Accuracy:', accuracy_score(y_valid, y_pred))
 
 		#y_pred = np.argmax(mlp.predict_proba(X_valid, W_history[min_loss_idx]), axis=1)
 		#y_pred_train = np.argmax(mlp.predict_proba(X, W_history[min_loss_idx]), axis=1)
@@ -203,9 +203,9 @@ class AE(BaseEstimator):
 		#print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
 		y_pred = np.argmax(self.predict_proba(X_valid, self.W_best_flat_), axis=1)
 		y_pred_train = np.argmax(self.predict_proba(X, self.W_best_flat_), axis=1)
-		print 'Optimal Loss:', self.loss(self.W_best_flat_, X_valid, y_valid)
-		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
-		print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
+		print('Optimal Loss:', self.loss(self.W_best_flat_, X_valid, y_valid))
+		print('Final Accuracy:', accuracy_score(y_valid, y_pred))
+		print('Final Accuracy Train:', accuracy_score(y, y_pred_train))
 		self.W_flat_ = self.W_best_flat_
 
 	def _stopping_criterion(self, curr_iter, curr_patience, loss):
@@ -265,11 +265,11 @@ class AE(BaseEstimator):
 		dropout_masks = []
 		if (dropout_proba is not None):
 			if (isinstance(dropout_proba, float)):
-				for i in xrange(0, len(self.shape_) - 1, 2):
+				for i in range(0, len(self.shape_) - 1, 2):
 					size = (self.shape_[i][0],)
 					dropout_masks.append(self.random_state_.binomial(1, dropout_proba, size))
 			else:
-				for i in xrange(0, len(self.shape_) - 1, 2):
+				for i in range(0, len(self.shape_) - 1, 2):
 					p = dropout_proba.pop(0)
 					if (p is not None):
 						size = (self.shape_[i][0],)
@@ -319,7 +319,7 @@ class AE(BaseEstimator):
 			delta_one_lower_x = delta_L
 			delta_one_lower_a = delta_L
 			W_one_lower = V
-			for j in xrange(1, len(activations) - 1):
+			for j in range(1, len(activations) - 1):
 				_, _, h_out = activations[j]
 				x_in, a_in, _ = activations[j + 1]
 
@@ -352,21 +352,21 @@ if (__name__ == '__main__'):
 	y_train, y_valid, y_test = data[1], data[3], data[5]
 
 	vec = CountVectorizer()
-	X_train = vec.fit_transform(map(lambda l: ' '.join(l), data[0]))
-	X_valid = vec.transform(map(lambda l: ' '.join(l), data[2]))
-	X_test = vec.transform(map(lambda l: ' '.join(l), data[4]))
+	X_train = vec.fit_transform([' '.join(l) for l in data[0]])
+	X_valid = vec.transform([' '.join(l) for l in data[2]])
+	X_test = vec.transform([' '.join(l) for l in data[4]])
 
 	mnb = MultinomialNB()
 	mnb.fit(X_train, y_train)
 	y_pred = mnb.predict(X_test)
 
-	print '[MNB BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted'))
+	print('[MNB BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted')))
 
 	svm = LinearSVC()
 	svm.fit(X_train, y_train)
 	y_pred = svm.predict(X_test)
 
-	print '[SVM BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted'))
+	print('[SVM BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted')))
 
 	### Word Vectors
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
@@ -380,4 +380,4 @@ if (__name__ == '__main__'):
 	ae.fit(data[0], y_train, data[2], y_valid)
 	y_pred = ae.predict_proba(data[0])
 
-	print '[RNN VSM] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted'))
+	print('[RNN VSM] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted')))

@@ -18,7 +18,7 @@ import seaborn as sns
 def one_hot(x, s=20):# 10
 	if (x.ndim == 1):
 		O = np.zeros((x.shape[0], s))
-		O[xrange(x.shape[0]), x] = 1.
+		O[list(range(x.shape[0])), x] = 1.
 
 		return O
 	else:

@@ -2,6 +2,7 @@ __author__ = 'thomas'
 from collections import OrderedDict
 
 import numpy as np
+from functools import reduce
 
 
 class RandomVectorSpaceModel(object):
@@ -36,4 +37,4 @@ class RandomVectorSpaceModel(object):
 
 	def asarray(self, dtype=np.float64):
 		ordered_vsm = OrderedDict(sorted(self.vsm_.items()))
-		return ordered_vsm.keys(), np.array(ordered_vsm.values(), dtype=dtype)
+		return list(ordered_vsm.keys()), np.array(list(ordered_vsm.values()), dtype=dtype)

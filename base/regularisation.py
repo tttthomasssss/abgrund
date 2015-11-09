@@ -29,7 +29,7 @@ def deriv_l2_regularisation(lambda_, W):
 def l1_regularisation(lambda_, W, shape):
 	views = shaped_from_flat(W, shape)
 	reg = 0
-	for i in xrange(len(views)):
+	for i in range(len(views)):
 		if (views[i].ndim > 1): # No regularisation for the biases
 			reg += np.abs(views[i]).sum()
 

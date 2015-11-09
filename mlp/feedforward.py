@@ -1,27 +1,17 @@
 __author__ = 'thomas'
-import cPickle
 import collections
 import itertools
 import json
 import os
 import sys
 
-from climin import GradientDescent
-from climin import NonlinearConjugateGradient
-from climin import Lbfgs
-from climin import Rprop
-from climin import RmsProp
 from climin import initialize
-from climin.util import empty_with_views
 from climin.util import iter_minibatches
 from climin.util import shaped_from_flat
 from common import dataset_utils
 from common import paths
-from preprocessing.data_preparation import split_data
 from preprocessing.data_preparation import split_data_train_dev_test
 from sklearn.base import BaseEstimator
-from sklearn.datasets import fetch_20newsgroups
-from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.naive_bayes import MultinomialNB
@@ -152,16 +142,16 @@ class MLP(BaseEstimator):
 		validation_loss = np.inf
 		self.W_best_flat_ = self.W_flat_
 
-		print '### %s ###' % (self.optimiser,)
-		print 'Init Loss:', self.loss(None, X_valid, y_valid)
+		print('### {} ###'.format(self.optimiser))
+		print('Init Loss: {}'.format(self.loss(None, X_valid, y_valid)))
 		y_pred = self.predict(X_valid)
-		print 'Init Accuracy:', accuracy_score(y_valid, y_pred)
+		print('Init Accuracy: {}'.format(accuracy_score(y_valid, y_pred)))
 		for info in opt:
 			# Check for validation loss
 			if (info['n_iter'] % self.validation_frequency_ == 0):
 				validation_loss = self.loss(opt.wrt, X_valid, y_valid)
 				self.loss_history_.append(validation_loss)
-				print '\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]' % (info['n_iter'], self.loss(opt.wrt, X, y), validation_loss, curr_patience)
+				print('\tIteration=%d; Training Loss=%.4f; Validation Loss=%.4f[patience=%r]'.format(info['n_iter'], self.loss(opt.wrt, X, y), validation_loss, curr_patience))
 				#W_history.append(opt.wrt)
 
 				curr_patience -= 1
@@ -202,9 +192,9 @@ class MLP(BaseEstimator):
 		self.W_flat_ = self.W_best_flat_ # TODO: halfing of weights during prediction potentially needs to happen here!!!
 		y_pred = self.predict(X_valid)
 		y_pred_train = self.predict(X)
-		print 'Optimal Loss:', self.loss(self.W_best_flat_, X_valid, y_valid)
-		print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
-		print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
+		print('Optimal Loss: {}'.format(self.loss(self.W_best_flat_, X_valid, y_valid)))
+		print('Final Accuracy: {}'.format(accuracy_score(y_valid, y_pred)))
+		print('Final Accuracy Train: {}'.format(accuracy_score(y, y_pred_train)))
 
 	def _stopping_criterion(self, curr_iter, curr_patience, loss):
 		if (np.isinf(curr_patience)):
@@ -224,7 +214,7 @@ class MLP(BaseEstimator):
 		num_dg_dW = np.zeros(W.shape)
 		perturb = np.zeros(W.shape)
 
-		for i in xrange(W.shape[0]):
+		for i in range(W.shape[0]):
 			perturb[i] = eps
 
 			loss_plus = self.loss(W + perturb, X, y)
@@ -292,11 +282,11 @@ class MLP(BaseEstimator):
 		dropout_masks = []
 		if (dropout_proba is not None):
 			if (isinstance(dropout_proba, float)):
-				for i in xrange(0, len(self.shape_) - 1, 2):
+				for i in range(0, len(self.shape_) - 1, 2):
 					size = (self.shape_[i][0],)
 					dropout_masks.append(self.random_state_.binomial(1, dropout_proba, size))
 			else:
-				for i in xrange(0, len(self.shape_) - 1, 2):
+				for i in range(0, len(self.shape_) - 1, 2):
 					p = dropout_proba.pop(0)
 					if (p is not None):
 						size = (self.shape_[i][0],)
@@ -403,21 +393,21 @@ if (__name__ == '__main__'):
 	X_train, y_train, X_valid, y_valid, X_test, y_test = split_data_train_dev_test('20newsgroups', dataset, ratio=(0.8, 0.2), random_state=np.random.RandomState(seed=42))
 
 	######## S K L E A R N   C L A S S I F I E R S
-	print '#### SKLEARN SVM'
+	print('#### SKLEARN SVM')
 	svm = LinearSVC()
 	svm.fit(X_train, y_train)
 	y_pred = svm.predict(X_test)
-	print '\tAccuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary'))
-	print '################'
+	print('\tAccuracy: %f; F1-Score: %f'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	print('################')
 	result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
 	result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 
-	print '#### SKLEARN MNB'
+	print('#### SKLEARN MNB')
 	mnb = MultinomialNB()
 	mnb.fit(X_train, y_train)
 	y_pred = mnb.predict(X_test)
-	print '\tAccuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary'))
-	print '################'
+	print('\tAccuracy: %f; F1-Score: %f'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	print ('################')
 	result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
 	result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 	##############################################
@@ -427,7 +417,7 @@ if (__name__ == '__main__'):
 	act_fn = ['tanh']#, 'relu', 'sigmoid']
 	for afn in act_fn:
 
-		print '#### %s ####' % (afn,)
+		print('#### {} ####'.format(afn))
 
 		if (afn == 'relu'):
 			gd_params = {'step_rate': 1.0}
