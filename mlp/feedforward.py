@@ -1,5 +1,6 @@
 __author__ = 'thomas'
 import collections
+import copy
 import itertools
 import json
 import os
@@ -24,6 +25,9 @@ import scipy as sp
 from base import activation
 from base import regularisation as reg
 from base import utils
+
+# Try network on mnist/cifar (or toy dataset) to see if it actually does what it is supposed to do...
+# Most likely backprop that is causing problems
 
 # TODO: Early stopping when validation error doesnt go down for a number of specified epochs
 #		Write Params to disk / Read params from disk
@@ -58,6 +62,9 @@ class MLP(BaseEstimator):
 		self.mini_batch_size_ = mini_batch_size
 		self.num_classes_ = 0
 
+	def best_weights(self, flat=False):
+		return shaped_from_flat(self.W_best_flat_, self.shape_) if not flat else self.W_best_flat_
+
 	# Forward Propagation phase
 	def _forward_propagation(self, X, W=None, dropout_mode='fit'):
 		W = self.W_flat_ if W is None else W
@@ -66,13 +73,13 @@ class MLP(BaseEstimator):
 		views = shaped_from_flat(W, self.shape_)
 		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
-		b_pred = views.pop(-1)
-		W_pred = views.pop(-1)
+		b_pred = views.pop()
+		W_pred = views.pop()
 
 		# Forward Propagation through hidden layers
 		while len(views) > 1:
-			b = views.pop()
-			W = views.pop()
+			W = views.pop(0)
+			b = views.pop(0)
 
 			# Dropout
 			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
@@ -134,6 +141,11 @@ class MLP(BaseEstimator):
 
 		opt = utils.get_optimiser_for_string(self.optimiser, **self.optimiser_kwargs)
 
+		# TODO: That shouldn't be a silent thing!!!
+		if (X_valid is None and y_valid is None):
+			X_valid = X
+			y_valid = y
+
 		#W_history = []
 		self.loss_history_ = []
 		min_loss = np.inf
@@ -159,7 +171,7 @@ class MLP(BaseEstimator):
 				if (validation_loss < min_loss * self.improvement_threshold_):
 					min_loss = validation_loss
 					#min_loss_idx = len(W_history) - 1
-					self.W_best_flat_ = opt.wrt
+					self.W_best_flat_ = copy.copy(opt.wrt)
 					curr_patience = self.patience_
 
 			# Gradient Check
@@ -180,16 +192,7 @@ class MLP(BaseEstimator):
 			if (self._stopping_criterion(info['n_iter'], curr_patience, validation_loss)):
 				break
 
-		#y_pred = np.argmax(mlp.predict_proba(X_valid, W=opt.wrt), axis=1)
-		#print 'Final Loss:', mlp.loss(opt.wrt, X_valid, y_valid)
-		#print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
-
-		#y_pred = np.argmax(mlp.predict_proba(X_valid, W_history[min_loss_idx]), axis=1)
-		#y_pred_train = np.argmax(mlp.predict_proba(X, W_history[min_loss_idx]), axis=1)
-		#print 'Optimal Loss:', mlp.loss(W_history[min_loss_idx], X_valid, y_valid)
-		#print 'Final Accuracy:', accuracy_score(y_valid, y_pred)
-		#print 'Final Accuracy Train:', accuracy_score(y, y_pred_train)
-		self.W_flat_ = self.W_best_flat_ # TODO: halfing of weights during prediction potentially needs to happen here!!!
+		self.W_flat_ = self.W_best_flat_
 		y_pred = self.predict(X_valid)
 		y_pred_train = self.predict(X)
 		print('Optimal Loss: {}'.format(self.loss(self.W_best_flat_, X_valid, y_valid)))
@@ -238,9 +241,9 @@ class MLP(BaseEstimator):
 			elif (activation_fn == 'relu'):
 				return initialize.randomize_uniform_relu(views, self.random_state_)
 			else:
-				return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+				return initialize.randn(views, random_state=self.random_state_, scale=0.01)
 		else: # Normal in [0 1]
-			return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+			return initialize.randn(views, random_state=self.random_state_, scale=0.01)
 
 	def _count_params(self):
 		n_params = 0
@@ -327,7 +330,7 @@ class MLP(BaseEstimator):
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(a)) # FIXME: Looks dodgy
+		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(a))
 
 		# Dropout during Backprop a.k.a. Backpropout
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -358,7 +361,7 @@ class MLP(BaseEstimator):
 			de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
 			db_dW = delta_l.mean(axis=0)
 
-			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X)) # FIXME: Looks dodgy
+			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X))
 
 			# Dropout during Backprop a.k.a. Backpropout
 			if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -414,7 +417,7 @@ if (__name__ == '__main__'):
 
 	timestamped_foldername = path_utils.timestamped_foldername()
 
-	act_fn = ['tanh']#, 'relu', 'sigmoid']
+	act_fn = ['relu']#, 'relu', 'sigmoid']
 	for afn in act_fn:
 
 		print('#### {} ####'.format(afn))
@@ -433,7 +436,7 @@ if (__name__ == '__main__'):
 
 		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
 		#mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
-		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=None, max_weight_norm=4.0, activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
 		#mlp.W_flat_ = np.empty(4358002)
 
 
@@ -459,4 +462,4 @@ if (__name__ == '__main__'):
 	if (not os.path.exists(out_path)):
 		os.makedirs(out_path)
 
-	json.dump(result_dict, open(os.path.join(out_path, fname), 'wb'))
+	json.dump(result_dict, open(os.path.join(out_path, fname), 'w'))
