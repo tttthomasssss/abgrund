@@ -26,15 +26,13 @@ from base import activation
 from base import regularisation as reg
 from base import utils
 
-# Try network on mnist/cifar (or toy dataset) to see if it actually does what it is supposed to do...
-# Most likely backprop that is causing problems
-
 # TODO: Early stopping when validation error doesnt go down for a number of specified epochs
 #		Write Params to disk / Read params from disk
 #		Not yet clear if Dropout is implemented correctly
 #		Backprop into input vectors!!!
 #		Gradient Check
 #		Check if Regularisation is implemented correctly
+#		Investigate mini-batch stuff
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
