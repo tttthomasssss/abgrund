@@ -32,7 +32,8 @@ from base import utils
 #		Backprop into input vectors!!!
 #		Gradient Check
 #		Check if Regularisation is implemented correctly
-#		Investigate mini-batch stuff
+#		Investigate mini-batch stuff (returns NaN as validation loss and training loss, something going awfully wrong)
+#		Re-Test Gradient check
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
@@ -59,6 +60,7 @@ class MLP(BaseEstimator):
 		self.loss_history_ = []
 		self.mini_batch_size_ = mini_batch_size
 		self.num_classes_ = 0
+		self.num_instances_ = 0
 
 	def best_weights(self, flat=False):
 		return shaped_from_flat(self.W_best_flat_, self.shape_) if not flat else self.W_best_flat_
@@ -124,12 +126,13 @@ class MLP(BaseEstimator):
 
 		# Add regularisation
 		reg = self.regularisation_(self.lambda_, W, self.shape_)
-		loss += (reg / (utils.num_instances(X) * 2))
+		loss += (reg / (self.num_instances_ * 2))
 
 		return loss
 
 	def fit(self, X, y, X_valid=None, y_valid=None):
 		self.num_classes_ = np.unique(y).shape[0]
+		self.num_instances_ = utils.num_instances(X)
 		args = self._get_input_chain(X, y)
 		self.optimiser_kwargs['args'] = args
 		self.optimiser_kwargs['wrt'] = self.W_flat_
@@ -306,12 +309,11 @@ class MLP(BaseEstimator):
 			gradients_dropout_iterator = reversed(self.dropout_masks_)
 
 		# Prediction of network w.r.t. to current W
-		self.W_flat_ = W
-		activations, magnitudes = self._forward_propagation(X)
+		activations, magnitudes = self._forward_propagation(X, W=W)
 
 		# Pop weights and bias for last layer
 		b = views.pop()
-		W = views.pop()
+		W_ = views.pop()
 
 		# Pop activations and activation magnitudes
 		y_pred = activations.pop() # Thats the prediction
@@ -328,7 +330,7 @@ class MLP(BaseEstimator):
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, W) / utils.num_instances(a))
+		de_dW += (self.deriv_regularisation_(self.lambda_, W_) / utils.num_instances(a))
 
 		# Dropout during Backprop a.k.a. Backpropout
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -340,7 +342,7 @@ class MLP(BaseEstimator):
 		gradients = np.concatenate([de_dW.flatten(), db_dW])
 
 		# Loop through hidden layers
-		views.append(W)
+		views.append(W_)
 		views.append(b)
 		while len(activations) > 0:
 			_ = views.pop() # Pop Bias term for lower layer
@@ -359,7 +361,7 @@ class MLP(BaseEstimator):
 			de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
 			db_dW = delta_l.mean(axis=0)
 
-			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(X))
+			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(a))
 
 			# Dropout during Backprop a.k.a. Backpropout
 			if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
