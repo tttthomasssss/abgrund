@@ -72,56 +72,57 @@ class RNN(BaseEstimator):
 		self.word_vector_model_ = word_vector_model
 		self.word_vector_dim_ = word_vector_dim
 
-	def _lookup_word(self, w):
-		return self.word_vector_model_[w].reshape(-1, 1)# if w in self.word_vector_model_ else np.ones((self.word_vector_dim_, 1))
-
-	def _forward_propagation(self, x, W, b_w, V, b_v):
-		curr_activations = []
-		curr_predictions = []
+	def _forward_propagation(self, words, W, b_w, V, b_v):
+		activations = []
+		predictions = []
+		magnitudes = []
 
 		# Initial hidden state
 		h = self.h_initial_
 
 		# Forward Propagation through whole sequence
-		for x_i in x:
+		for w_i in words:
 
 			# Lookup word vector in model
-			v = self._lookup_word(x_i)
+			v = self.word_vector_model_[w_i].reshape(-1, 1)
 
 			# Stack current input word vector (x_i) and previous hidden state h (t_i-1) together
 			s = np.concatenate((v, h))
 
 			# Linear Transformation (W contains the weights of the recurrent input as well as the standard input)
-			a = np.dot(W.T, s) + b_w
+			z = np.dot(W.T, s) + b_w
 
 			# Apply Non-Linearity
-			h = self.activation_fn(a)
+			h = self.activation_fn(z)
 
+			''' OLD
 			# Current prediction (to get a local error signal and to overcome vanishing gradient)
 			p_a = np.dot(V.T, h) + b_v
 			p = self.prediction_fn(p_a.T) # TODO: Return the predictions along with the activations
 
-			curr_activations.insert(0, (v, a, h))
-			curr_predictions.insert(0, (p_a.T, p))
-
-		return curr_activations, curr_predictions
-
+			activations.insert(0, (v, z, h))
+			predictions.insert(0, (p_a.T, p))
+			'''
+		''' OLD
+		return activations, predictions
+		'''
+		return activations, magnitudes
 	# Forward Propagation phase
 	def predict_proba(self, X, W=None):
 		W = self.W_flat_ if W is None else W
 		views = shaped_from_flat(W, self.shape_)
 
-		# Load weights for current epoch
-		W = views[0]
-		b_w = views[1].reshape(-1, 1)
-		V = views[2]
-		b_v = views[3].reshape(-1, 1)
+		# Load weights for current epoch (views[0] are the lookup weights)
+		W = views[1]
+		b_w = views[2].reshape(-1, 1)
+		V = views[3]
+		b_v = views[4].reshape(-1, 1)
 
 		y_pred = []
 
 		# For all Documents
-		for x in X:
-			_, pred = self._forward_propagation(x, W, b_w, V, b_v)
+		for doc in X:
+			_, pred = self._forward_propagation(doc, W, b_w, V, b_v)
 			y_pred.append(np.squeeze(pred[1][-1]))
 
 		return np.array(y_pred)
@@ -230,19 +231,18 @@ class RNN(BaseEstimator):
 		views = shaped_from_flat(self.W_flat_, self.shape_)
 		if (W_init == 'xavier'):
 			if (activation_fn == 'sigmoid'):
-				params = initialize.randomize_uniform_sigmoid(views[1:], self.random_state_)
+				return initialize.randomize_uniform_sigmoid(views, self.random_state_)
 			elif (activation_fn == 'tanh'):
-				params = initialize.randomize_uniform_tanh(views[1:], self.random_state_)
+				return initialize.randomize_uniform_tanh(views, self.random_state_)
 			elif (activation_fn == 'relu'):
-				params = initialize.randomize_uniform_relu(views[1:], self.random_state_)
+				return initialize.randomize_uniform_relu(views, self.random_state_)
 			else:
-				return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+				return initialize.randn(views, random_state=self.random_state_, scale=0.01)
 
 			# Add Word Vectors to first layer
 			#vsm.asarray()
-			return params
 		else: # Normal in [0 1]
-			return initialize.randomize_normal(self.W_flat_, random_state=self.random_state_)
+			return initialize.randn(views, random_state=self.random_state_, scale=0.01)
 
 	def _count_params(self):
 		n_params = 0
@@ -354,6 +354,7 @@ if (__name__ == '__main__'):
 
 	y_train, y_valid, y_test = data[1], data[3], data[5]
 
+	'''
 	vec = CountVectorizer()
 	X_train = vec.fit_transform([' '.join(l) for l in data[0]])
 	X_valid = vec.transform([' '.join(l) for l in data[2]])
@@ -370,7 +371,7 @@ if (__name__ == '__main__'):
 	y_pred = svm.predict(X_test)
 
 	print('[SVM BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted')))
-
+	'''
 	### Word Vectors
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
