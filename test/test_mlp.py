@@ -6,7 +6,7 @@ from mlp.feedforward import MLP
 
 
 def test_mlp_toy_dataset():
-	N = 100000 #100 # Number of Samples per Class
+	N = 100 # Number of Samples per Class # 100000 for testing SGD, 100 for Batch GD
 	D = 2 # Number of Features (dimensionality of data)
 	K = 3 # Number of Classes
 	X = np.zeros((N * K, D))
@@ -35,7 +35,7 @@ def test_mlp_toy_dataset():
 	}
 
 	mlp = MLP(shape=[(2, 200), 200, (200, 3), 3], dropout_proba=None, activation_fn='relu', max_epochs=10000, gradient_check=False,
-								  validation_frequency=1000, lambda_=0.1, mini_batch_size=10000, W_init='xavier', optimiser='gd', **gd_params)
+								  validation_frequency=1000, lambda_=0.1, mini_batch_size=-1, W_init='xavier', optimiser='gd', **gd_params)
 
 	mlp.fit(X, y)
 
