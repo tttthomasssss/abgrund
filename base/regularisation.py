@@ -11,8 +11,9 @@ def get_regularisation_fn_for_string(regularisation):
 		return l1_regularisation, deriv_l1_regularisation
 
 
-def l2_regularisation(lambda_, W, shape):
+def l2_regularisation(lambda_, W, shape, skip_first=False): # skip_first responsible for skipping the lookup layer
 	views = shaped_from_flat(W, shape)
+	views = views if not skip_first else views[1:]
 	reg = 0
 	while len(views) > 0:
 		W_curr = views.pop()
@@ -26,8 +27,9 @@ def deriv_l2_regularisation(lambda_, W):
 	return W * lambda_
 
 
-def l1_regularisation(lambda_, W, shape):
+def l1_regularisation(lambda_, W, shape, skip_first=False): # skip_first responsible for skipping the lookup layer
 	views = shaped_from_flat(W, shape)
+	views = views if not skip_first else views[1:]
 	reg = 0
 	for i in range(len(views)):
 		if (views[i].ndim > 1): # No regularisation for the biases

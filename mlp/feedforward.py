@@ -30,9 +30,6 @@ from base import utils
 #		Write Params to disk / Read params from disk
 #		Not yet clear if Dropout is implemented correctly
 #		Backprop into input vectors!!!
-#		Gradient Check
-#		Check if Regularisation is implemented correctly
-#		Investigate mini-batch stuff (returns NaN as validation loss and training loss, something going awfully wrong)
 #		Re-Test Gradient check
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,

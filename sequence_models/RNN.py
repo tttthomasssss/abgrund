@@ -72,7 +72,8 @@ class RNN(BaseEstimator):
 		self.word_vector_model_ = word_vector_model
 		self.word_vector_dim_ = word_vector_dim
 
-	def _forward_propagation(self, words, W, b_w, V, b_v):
+	# Forward Propagation phase
+	def _forward_propagation(self, doc, W, b_W, V, b_V):
 		activations = []
 		predictions = []
 		magnitudes = []
@@ -81,19 +82,24 @@ class RNN(BaseEstimator):
 		h = self.h_initial_
 
 		# Forward Propagation through whole sequence
-		for w_i in words:
+		for w_i in doc:
 
 			# Lookup word vector in model
 			v = self.word_vector_model_[w_i].reshape(-1, 1)
+
+			# TODO: UNSURE IF THIS IS NECESSARY
+			activations.append(v)
 
 			# Stack current input word vector (x_i) and previous hidden state h (t_i-1) together
 			s = np.concatenate((v, h))
 
 			# Linear Transformation (W contains the weights of the recurrent input as well as the standard input)
-			z = np.dot(W.T, s) + b_w
+			z = safe_sparse_dot(W.T, s) + b_W
+			magnitudes.append(z)
 
 			# Apply Non-Linearity
 			h = self.activation_fn(z)
+			activations.append(h)
 
 			''' OLD
 			# Current prediction (to get a local error signal and to overcome vanishing gradient)
@@ -103,27 +109,35 @@ class RNN(BaseEstimator):
 			activations.insert(0, (v, z, h))
 			predictions.insert(0, (p_a.T, p))
 			'''
+		# Prediction - Linear Transformation
+		z = safe_sparse_dot(V.T, activations[-1]) + b_V
+
+		# Predict!
+		a = self.prediction_fn(z.T)
+
+		activations.append(a)
+		magnitudes.append(z)
 		''' OLD
 		return activations, predictions
 		'''
 		return activations, magnitudes
-	# Forward Propagation phase
+
 	def predict_proba(self, X, W=None):
 		W = self.W_flat_ if W is None else W
 		views = shaped_from_flat(W, self.shape_)
 
 		# Load weights for current epoch (views[0] are the lookup weights)
 		W = views[1]
-		b_w = views[2].reshape(-1, 1)
+		b_W = views[2].reshape(-1, 1)
 		V = views[3]
-		b_v = views[4].reshape(-1, 1)
+		b_V = views[4].reshape(-1, 1)
 
 		y_pred = []
 
 		# For all Documents
 		for doc in X:
-			_, pred = self._forward_propagation(doc, W, b_w, V, b_v)
-			y_pred.append(np.squeeze(pred[1][-1]))
+			activations, _ = self._forward_propagation(doc, W, b_W, V, b_V)
+			y_pred.append(np.squeeze(activations[-1]))
 
 		return np.array(y_pred)
 
@@ -136,7 +150,7 @@ class RNN(BaseEstimator):
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_labels_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
 
 		# Add regularisation
-		reg = self.regularisation_(self.lambda_, W, self.shape_)
+		reg = self.regularisation_(self.lambda_, W, self.shape_, skip_first=True)
 		loss += (reg / (utils.num_instances(X) * 2))
 
 		return loss
@@ -284,11 +298,11 @@ class RNN(BaseEstimator):
 		views = shaped_from_flat(W, self.shape_)
 		self.W_flat_ = W
 
-		# Load weights for current epoch
-		W = views[0]
-		b_W = views[1].reshape(-1, 1)
-		V = views[2]
-		b_V = views[3].reshape(-1, 1)
+		# Load weights for current epoch (views[0] contains the lookup layer)
+		W = views[1]
+		b_W = views[2].reshape(-1, 1)
+		V = views[3]
+		b_V = views[4].reshape(-1, 1)
 
 		dg_dW = np.zeros(W.shape)
 		db_dW = np.zeros(b_W.shape)
@@ -301,10 +315,24 @@ class RNN(BaseEstimator):
 		dg_dW += self.deriv_regularisation_(self.lambda_, W) / n_instances
 
 		# Prediction of network w.r.t. to current W
-		for i, x in enumerate(X):
-			activations, predictions = self._forward_propagation(x, W, b_W, V, b_V)
+		for i, doc in enumerate(X):
+			activations, magnitudes = self._forward_propagation(doc, W, b_W, V, b_V)
 
 			# Error in last layer for current instance
+			y_pred = activations.pop()
+			z = magnitudes.pop()
+
+			# BP 1: Error in last layer
+			delta_l = self.deriv_prediction_fn(y_pred, y[i].reshape(1, -1)).T * self.deriv_activation_fn(z)
+
+			# Pop another activation
+			a = activations.pop()
+
+			# Gradients w.r.t. last layer error
+			dg_dV += safe_sparse_dot(a, delta_l.T) / n_instances # BP 4: dot product between inputs that caused the error and backpropped error
+			db_dV += delta_l / n_instances # BP 3: gradient of bias = delta_l
+
+			############## OLD STUFF START
 			y_pred_activation, y_pred = predictions[0][0], predictions[0][1] # TODO: Maybe use output of every node?
 			e = self.deriv_prediction_fn(y_pred, y[i]).reshape(1, -1)
 			delta_L = e * self.deriv_activation_fn(y_pred_activation)
@@ -314,6 +342,7 @@ class RNN(BaseEstimator):
 			# Gradient from BPTT
 			dg_dV += np.dot(a_last, delta_L)
 			db_dV += delta_L.T
+			############## OLD STUFF END, GET ON WITH SHIT AFTERWARDS!!!
 
 			delta_one_lower_x = delta_L
 			delta_one_lower_a = delta_L
