@@ -332,48 +332,54 @@ class RNN(BaseEstimator):
 			dg_dV += safe_sparse_dot(a, delta_l.T) / n_instances # BP 4: dot product between inputs that caused the error and backpropped error
 			db_dV += delta_l / n_instances # BP 3: gradient of bias = delta_l
 
-			############## OLD STUFF START
-			y_pred_activation, y_pred = predictions[0][0], predictions[0][1] # TODO: Maybe use output of every node?
-			e = self.deriv_prediction_fn(y_pred, y[i]).reshape(1, -1)
-			delta_L = e * self.deriv_activation_fn(y_pred_activation)
-
-			a_last = activations[0][-1]
-
-			# Gradient from BPTT
-			dg_dV += np.dot(a_last, delta_L)
-			db_dV += delta_L.T
-			############## OLD STUFF END, GET ON WITH SHIT AFTERWARDS!!!
-
-			delta_one_lower_x = delta_L
-			delta_one_lower_a = delta_L
+			# Handle penultimate layer separately as well, this is because things get messy when we change from V to W
+			# as the backprop weight!
+			# With the backprop weight being W, we need to handle the recurrent input as well as the word vector input
+			# and hence, the 2-weights-in-1 backfires during backprop (badumm-ts) and makes things a little ugly
+			delta_one_lower_x = delta_l
 			W_one_lower = V
-			for j in range(1, len(activations) - 1):
-				_, _, h_out = activations[j]
-				x_in, a_in, _ = activations[j + 1]
 
-				# The messyness sets in when we change from V to W as the backprop weight
-				# With the backprop weight being W, we need to handle the recurrent input as well as the word vector input
-				# and hence, the 2-weights-in-1 backfires during backprop (badumm-ts) and makes things a little ugly
-				if (j > 1):
-					delta_lx = np.dot(W_one_lower[:self.word_vector_dim_, :], delta_one_lower_x) * self.deriv_activation_fn(h_out)
-					delta_la = np.dot(W_one_lower[self.word_vector_dim_:, :], delta_one_lower_a) * self.deriv_activation_fn(h_out)
-				else:
-					delta_lx = np.dot(W_one_lower, delta_one_lower_x.T) * self.deriv_activation_fn(h_out)
-					delta_la = delta_lx
+			z = magnitudes.pop()
+			a_word_vector = activations.pop()
+			a_in = activations.pop()
+
+			delta_lx = safe_sparse_dot(W_one_lower, delta_one_lower_x) * self.deriv_activation_fn(z)
+			delta_la = delta_lx
+
+			# 2-part gradient update, 1) from word vector input, 2) from recurrent input
+			dg_dW[:self.word_vector_dim_, :] += safe_sparse_dot(a_word_vector, delta_lx.T) # TODO: Try sequence length normalised update
+			dg_dW[self.word_vector_dim_:, :] += safe_sparse_dot(a_in, delta_la.T)
+
+			db_dW += delta_lx # Only the input has a bias, the recurrent layer has not!
+
+			# Backpropagate error signal from x_in to word vector as well
+			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
+
+			delta_one_lower_x = delta_lx
+			delta_one_lower_a = delta_la
+			W_one_lower = W
+
+			# Finally, BPTT through the remaining timesteps
+			while (len(activations) > 0):
+				# Pop the activations and magnitude
+				a_word_vector = activations.pop()
+				a_in = activations.pop()
+				z = magnitudes.pop()
+
+				delta_lx = np.dot(W_one_lower[:self.word_vector_dim_, :], delta_one_lower_x) * self.deriv_activation_fn(z)
+				delta_la = np.dot(W_one_lower[self.word_vector_dim_:, :], delta_one_lower_a) * self.deriv_activation_fn(z)
 
 				# 2-part gradient update, 1) from word vector input, 2) from recurrent input
-				dg_dW[:self.word_vector_dim_, :] += np.dot(x_in, delta_lx.T)
-				dg_dW[self.word_vector_dim_:, :] += np.dot(a_in, delta_la.T)
+				dg_dW[:self.word_vector_dim_, :] += safe_sparse_dot(a_word_vector, delta_lx.T)
+				dg_dW[self.word_vector_dim_:, :] += safe_sparse_dot(a_in, delta_la.T)
 
 				db_dW += delta_lx # Only the input has a bias, the recurrent layer has not!
 
 				# Backpropagate error signal from x_in to word vector as well
 				# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 
-
 				delta_one_lower_x = delta_lx
 				delta_one_lower_a = delta_la
-				W_one_lower = W
 
 		return np.concatenate([dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
 
