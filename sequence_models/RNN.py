@@ -101,14 +101,6 @@ class RNN(BaseEstimator):
 			h = self.activation_fn(z)
 			activations.append(h)
 
-			''' OLD
-			# Current prediction (to get a local error signal and to overcome vanishing gradient)
-			p_a = np.dot(V.T, h) + b_v
-			p = self.prediction_fn(p_a.T) # TODO: Return the predictions along with the activations
-
-			activations.insert(0, (v, z, h))
-			predictions.insert(0, (p_a.T, p))
-			'''
 		# Prediction - Linear Transformation
 		z = safe_sparse_dot(V.T, activations[-1]) + b_V
 
@@ -304,6 +296,7 @@ class RNN(BaseEstimator):
 		V = views[3]
 		b_V = views[4].reshape(-1, 1)
 
+		dg_dWordVectors = np.zeros((len(self.word_vector_model_), self.word_vector_dim_))
 		dg_dW = np.zeros(W.shape)
 		db_dW = np.zeros(b_W.shape)
 		dg_dV = np.zeros(V.shape)
@@ -360,7 +353,7 @@ class RNN(BaseEstimator):
 			W_one_lower = W
 
 			# Finally, BPTT through the remaining timesteps
-			while (len(activations) > 0):
+			while (len(activations) > 1):
 				# Pop the activations and magnitude
 				a_word_vector = activations.pop()
 				a_in = activations.pop()
@@ -381,7 +374,11 @@ class RNN(BaseEstimator):
 				delta_one_lower_x = delta_lx
 				delta_one_lower_a = delta_la
 
-		return np.concatenate([dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
+			# Backpropagate error signal from x_in to word vector as well
+			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
+			# pop last word vector & update
+
+		return np.concatenate([dg_dWordVectors.flatten(), dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
 
 if (__name__ == '__main__'):
 	### Bag of Words
