@@ -5,6 +5,7 @@ import collections
 import itertools
 import json
 import os
+import sys
 
 from climin import GradientDescent
 from climin import NonlinearConjugateGradient
@@ -183,8 +184,16 @@ class RNN(BaseEstimator):
 				if (validation_loss < min_loss * self.improvement_threshold_):
 					min_loss = validation_loss
 					#min_loss_idx = len(W_history) - 1
-					self.W_best_flat_ = opt.wrt
+					self.W_best_flat_ = copy(opt.wrt)
 					curr_patience = self.patience_
+
+			# Gradient Check
+			if (self.gradient_check_):
+				passed, diff, error_threshold = self._gradient_check(opt.wrt, X, y)
+
+				if (not passed):
+					print('[WARNING] - Gradient check not passed! Error=%f; Threshold=%f'.format(diff, error_threshold))
+					sys.exit(666)
 
 			# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 			if (self.max_weight_norm_ is not None):
@@ -428,12 +437,12 @@ if (__name__ == '__main__'):
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
 	vsm.construct(data[0], initialise_immediately=True)
-	gd_params = {'step_rate': 10., 'momentum': 0.95, 'momentum_type': 'nesterov'}
+	gd_params = {'step_rate': 30., 'momentum': 0.95, 'momentum_type': 'nesterov'}
 	lbfgs_params = {}
 	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
-	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
+	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10, gradient_check=False,
 			  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, update_word_vectors=True, optimiser='gd', **gd_params)
 
 	#rnn.predict_proba(data[0][:1])
