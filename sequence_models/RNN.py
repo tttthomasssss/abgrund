@@ -29,6 +29,7 @@ from sklearn.svm import LinearSVC
 from sklearn.utils.extmath import safe_sparse_dot
 from utils import path_utils
 import numpy as np
+import scipy as sp
 
 from base import activation
 from base import regularisation as reg
@@ -45,7 +46,7 @@ class RNN(BaseEstimator):
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
 				 max_weight_norm=None, mini_batch_size=50, word_vector_dim=300, word_vector_model=None,
-				 optimiser='gd', **optimiser_kwargs):
+				 update_word_vectors=False, optimiser='gd', **optimiser_kwargs):
 		self.random_state_ = self._create_random_state(random_state)
 		self.activations_ = []
 		self.predictions_ = []
@@ -71,11 +72,11 @@ class RNN(BaseEstimator):
 		self.h_initial_ = np.zeros((word_vector_dim, 1), dtype=np.float64)
 		self.word_vector_model_ = word_vector_model
 		self.word_vector_dim_ = word_vector_dim
+		self.update_word_vectors = update_word_vectors
 
 	# Forward Propagation phase
 	def _forward_propagation(self, doc, W, b_W, V, b_V):
 		activations = []
-		predictions = []
 		magnitudes = []
 
 		# Initial hidden state
@@ -87,7 +88,7 @@ class RNN(BaseEstimator):
 			# Lookup word vector in model
 			v = self.word_vector_model_[w_i].reshape(-1, 1)
 
-			# TODO: UNSURE IF THIS IS NECESSARY
+			# Add word vectors to activations (only used if self.update_word_vectors == True)
 			activations.append(v)
 
 			# Stack current input word vector (x_i) and previous hidden state h (t_i-1) together
@@ -109,9 +110,7 @@ class RNN(BaseEstimator):
 
 		activations.append(a)
 		magnitudes.append(z)
-		''' OLD
-		return activations, predictions
-		'''
+
 		return activations, magnitudes
 
 	def predict_proba(self, X, W=None):
@@ -224,13 +223,24 @@ class RNN(BaseEstimator):
 		else:
 			return ((i, {}) for i in iter_minibatches([X, utils.one_hot(y, s=self.num_labels_)], self.mini_batch_size_, [0, 0]))
 
-	def _gradient_check(self, W, X, y, eps=10e-4): # TODO: Not quite right yet
-		loss1 = self.loss(W + eps, X, y)
-		loss2 = self.loss(W - eps, X, y)
+	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2):
+		dg_dW = self.dLoss_dW(W, X, utils.one_hot(y, self.num_classes_))
 
-		dLoss_dW_num = (loss1 - loss2) / 2 * eps
+		num_dg_dW = np.zeros(W.shape)
+		perturb = np.zeros(W.shape)
 
-		return dLoss_dW_num
+		for i in range(W.shape[0]):
+			perturb[i] = eps
+
+			loss_plus = self.loss(W + perturb, X, y)
+			loss_minus = self.loss(W - perturb, X, y)
+
+			num_dg_dW[i] = (loss_plus - loss_minus) / (2 * eps)
+			perturb[i] = 0
+
+		diff = sp.linalg.norm(num_dg_dW - dg_dW) / sp.linalg.norm(num_dg_dW + dg_dW)
+
+		return (diff <= error_threshold, diff, error_threshold)
 
 	def _initialise_weights(self, W_init, activation_fn):
 		self.W_flat_ = np.empty(self._count_params())
@@ -296,7 +306,7 @@ class RNN(BaseEstimator):
 		V = views[3]
 		b_V = views[4].reshape(-1, 1)
 
-		dg_dWordVectors = np.zeros((len(self.word_vector_model_), self.word_vector_dim_))
+		dg_dX = np.zeros((len(self.word_vector_model_), self.word_vector_dim_)) # Init gradients for word vectors
 		dg_dW = np.zeros(W.shape)
 		db_dW = np.zeros(b_W.shape)
 		dg_dV = np.zeros(V.shape)
@@ -378,7 +388,7 @@ class RNN(BaseEstimator):
 			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 			# pop last word vector & update
 
-		return np.concatenate([dg_dWordVectors.flatten(), dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
+		return np.concatenate([dg_dX.flatten(), dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
 
 if (__name__ == '__main__'):
 	### Bag of Words
