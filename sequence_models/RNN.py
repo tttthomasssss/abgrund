@@ -1,4 +1,5 @@
 __author__ = 'thomas'
+from copy import copy
 import pickle
 import collections
 import itertools
@@ -321,6 +322,10 @@ class RNN(BaseEstimator):
 		for i, doc in enumerate(X):
 			activations, magnitudes = self._forward_propagation(doc, W, b_W, V, b_V)
 
+			# Copy words for word-vector update
+			if (self.update_word_vectors_):
+				words = copy(doc)
+
 			# Error in last layer for current instance
 			y_pred = activations.pop()
 			z = magnitudes.pop()
@@ -358,7 +363,7 @@ class RNN(BaseEstimator):
 			# Backpropagate error signal from x_in to word vector as well
 			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 			if (self.update_word_vectors_):
-				dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
+				dg_dX[self.word_vector_model_.index(words.pop()), :] += delta_lx.reshape(-1)
 
 			delta_one_lower_x = delta_lx
 			delta_one_lower_a = delta_la
@@ -383,7 +388,7 @@ class RNN(BaseEstimator):
 				# Backpropagate error signal from x_in to word vector as well
 				# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 				if (self.update_word_vectors_):
-					dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
+					dg_dX[self.word_vector_model_.index(words.pop()), :] += delta_lx.reshape(-1)
 
 				delta_one_lower_x = delta_lx
 				delta_one_lower_a = delta_la
@@ -392,7 +397,7 @@ class RNN(BaseEstimator):
 			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 			# pop last word vector & update
 			if (self.update_word_vectors_):
-				dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
+				dg_dX[self.word_vector_model_.index(words.pop()), :] += delta_lx.reshape(-1)
 
 		return np.concatenate([dg_dX.flatten(), dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
 
@@ -423,13 +428,13 @@ if (__name__ == '__main__'):
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
 	vsm.construct(data[0], initialise_immediately=True)
-	gd_params = {'step_rate': 1., 'momentum': 0.95, 'momentum_type': 'nesterov'}
+	gd_params = {'step_rate': 10., 'momentum': 0.95, 'momentum_type': 'nesterov'}
 	lbfgs_params = {}
 	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
 	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
-			  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
+			  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, update_word_vectors=True, optimiser='gd', **gd_params)
 
 	#rnn.predict_proba(data[0][:1])
 	rnn.fit(data[0], y_train, data[2], y_valid)
