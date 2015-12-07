@@ -13,13 +13,15 @@ class RandomVectorSpaceModel(object):
 		self.vsm_ = {}
 		self.vocab_ = set()
 		self.vocab_size_ = None
+		self.inverted_index = {}
 
 	def construct(self, data, initialise_immediately=False):
 		self.vocab_ = sorted(reduce(lambda vocab, doc: vocab | set(doc), data, set()))
 
 		if (initialise_immediately):
-			for w in self.vocab_:
+			for idx, w in enumerate(self.vocab_):
 				self.vsm_[w] = self.random_state_.randn(self.ndim_,)
+				self.inverted_index[w] = idx
 
 			self._vocab_size_ = len(self.vocab_)
 
@@ -34,6 +36,12 @@ class RandomVectorSpaceModel(object):
 
 	def __contains__(self, item):
 		return item in self.vsm_
+
+	def index(self, w):
+		if (len(self.inverted_index) <= 0):
+			raise NotImplementedError
+		else:
+			return self.inverted_index[w]
 
 	def asarray(self, dtype=np.float64):
 		ordered_vsm = OrderedDict(sorted(self.vsm_.items()))

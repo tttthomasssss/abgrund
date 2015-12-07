@@ -72,7 +72,7 @@ class RNN(BaseEstimator):
 		self.h_initial_ = np.zeros((word_vector_dim, 1), dtype=np.float64)
 		self.word_vector_model_ = word_vector_model
 		self.word_vector_dim_ = word_vector_dim
-		self.update_word_vectors = update_word_vectors
+		self.update_word_vectors_ = update_word_vectors
 
 	# Forward Propagation phase
 	def _forward_propagation(self, doc, W, b_W, V, b_V):
@@ -357,6 +357,8 @@ class RNN(BaseEstimator):
 
 			# Backpropagate error signal from x_in to word vector as well
 			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
+			if (self.update_word_vectors_):
+				dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
 
 			delta_one_lower_x = delta_lx
 			delta_one_lower_a = delta_la
@@ -380,6 +382,8 @@ class RNN(BaseEstimator):
 
 				# Backpropagate error signal from x_in to word vector as well
 				# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
+				if (self.update_word_vectors_):
+					dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
 
 				delta_one_lower_x = delta_lx
 				delta_one_lower_a = delta_la
@@ -387,6 +391,8 @@ class RNN(BaseEstimator):
 			# Backpropagate error signal from x_in to word vector as well
 			# Should just be delta_lx! --> dot product with indicator matrix (vocab_size x 1), to get the gradient for the full word vector table (vocab_size x vector_dim)
 			# pop last word vector & update
+			if (self.update_word_vectors_):
+				dg_dX[self.word_vector_model_.index(doc.pop()), :] += delta_lx
 
 		return np.concatenate([dg_dX.flatten(), dg_dW.flatten(), db_dW.flatten(), dg_dV.flatten(), db_dV.flatten()])
 
@@ -396,7 +402,6 @@ if (__name__ == '__main__'):
 
 	y_train, y_valid, y_test = data[1], data[3], data[5]
 
-	'''
 	vec = CountVectorizer()
 	X_train = vec.fit_transform([' '.join(l) for l in data[0]])
 	X_valid = vec.transform([' '.join(l) for l in data[2]])
@@ -413,12 +418,13 @@ if (__name__ == '__main__'):
 	y_pred = svm.predict(X_test)
 
 	print('[SVM BoW] Accuracy: %f; F1-Score: %f' % (accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted')))
-	'''
+
 	### Word Vectors
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
-	vsm.construct(data[0])
+	vsm.construct(data[0], initialise_immediately=True)
 	gd_params = {'step_rate': 1., 'momentum': 0.95, 'momentum_type': 'nesterov'}
+	lbfgs_params = {}
 	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
