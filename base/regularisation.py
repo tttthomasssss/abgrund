@@ -4,14 +4,12 @@ from climin.util import shaped_from_flat
 import numpy as np
 
 
-def l2_regularisation(lambda_, W, shape, skip_first=False): # skip_first responsible for skipping the lookup layer
-	views = shaped_from_flat(W, shape)
-	views = views if not skip_first else views[1:]
+def l2_regularisation(lambda_, weights, skip_first=False): # skip_first responsible for skipping the lookup layer
+	skip = 0 if not skip_first else 1
 	reg = 0
-	while len(views) > 0:
-		W_curr = views.pop()
-		if (W_curr.ndim > 1): # Don't add regularisation for bias term
-			reg += (W_curr**2).sum()
+	for W in weights[skip:]:
+		if (W.ndim > 1): # Don't add regularisation for bias term
+			reg += (W**2).sum()
 
 	return reg * lambda_
 
@@ -20,13 +18,12 @@ def deriv_l2_regularisation(lambda_, W):
 	return W * lambda_
 
 
-def l1_regularisation(lambda_, W, shape, skip_first=False): # skip_first responsible for skipping the lookup layer
-	views = shaped_from_flat(W, shape)
-	views = views if not skip_first else views[1:]
+def l1_regularisation(lambda_, weights, skip_first=False): # skip_first responsible for skipping the lookup layer
+	skip = 0 if not skip_first else 1
 	reg = 0
-	for i in range(len(views)):
-		if (views[i].ndim > 1): # No regularisation for the biases
-			reg += np.abs(views[i]).sum()
+	for W in weights[skip:]:
+		if (W.ndim > 1): # No regularisation for the biases
+			reg += np.abs(W).sum()
 
 	return reg * lambda_
 

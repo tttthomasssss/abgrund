@@ -23,6 +23,7 @@ import scipy as sp
 
 from base import activation
 from base import initialisation
+from base import optimisation
 from base import regularisation as reg
 from base import utils
 
@@ -35,15 +36,15 @@ from base import utils
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
-				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
-				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', **optimiser_kwargs):
+				 max_epochs=20, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
+				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', optimiser_kwargs={}):
 		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
 		self.W_ = self._initialise_weights(W_init, activation_fn)
 		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
 		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
-		self.optimiser = optimiser
-		self.optimiser_kwargs = optimiser_kwargs
+		self.optimiser_ = getattr(optimisation, optimiser)
+		self.optimiser_kwargs_ = optimiser_kwargs
 		self.gradient_check_ = gradient_check
 		self.lambda_ = lambda_
 		self.regularisation_, self.deriv_regularisation_ = (getattr(reg, '{}_regularisation'.format(regularisation)), getattr(reg, 'deriv_{}_regularisation'.format(regularisation)))
@@ -64,19 +65,19 @@ class MLP(BaseEstimator):
 		return shaped_from_flat(self.W_best_flat_, self.shape_) if not flat else self.W_best_flat_
 
 	# Forward Propagation phase
-	def _forward_propagation(self, X, W=None, dropout_mode='fit'):
-		W = self.W_ if W is None else W
+	def _forward_propagation(self, X, dropout_mode='fit'):
 		activations = [X]
 		magnitudes = []
 		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
-		b_pred = W.pop()
-		W_pred = W.pop()
+		idx = list(range(len(self.W_)))
+		b_pred = self.W_[idx.pop()]
+		W_pred = self.W_[idx.pop()]
 
 		# Forward Propagation through hidden layers
-		while len(W) > 1:
-			W = W.pop(0)
-			b = W.pop(0)
+		while len(idx) > 1:
+			W = self.W_[idx.pop(0)]
+			b = self.W_[idx.pop(0)]
 
 			# Dropout
 			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
@@ -114,20 +115,55 @@ class MLP(BaseEstimator):
 	def predict(self, X):
 		return np.argmax(self.predict_proba(X), axis=1)
 
-	def loss(self, W, X, y):
-		W = self.W_ if W is None else W
-		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
+	def loss(self, X, y):
+		activations, _ = self._forward_propagation(X,dropout_mode='predict')
 		predictions = activations[-1]
 
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
 
 		# Add regularisation
-		reg = self.regularisation_(self.lambda_, W, self.shape_)
+		reg = self.regularisation_(self.lambda_, self.W_)
 		loss += (reg / (self.num_instances_ * 2))
 
 		return loss
 
 	def fit(self, X, y, X_valid=None, y_valid=None):
+		# Some initial administrative stuff
+		self.num_classes_ = np.unique(y).shape[0]
+		self.num_instances_ = utils.num_instances(X)
+		Y = utils.one_hot(y, self.num_classes_)
+
+		# Build index cycles over input data
+		idx = np.arange(X.shape[0])
+		if (self.mini_batch_size_ is None or self.mini_batch_size_ <= 0):
+			idx_stream = itertools.repeat(np.array_split(idx, idx.shape[0] / self.mini_batch_size_), self.max_epochs_)
+		else:
+			idx_stream = itertools.repeat(np.array_split(idx, 1), self.max_epochs_) # Batched Input
+
+		# Log initial performance
+		y_pred = self.predict(X)
+		print('Initial Training Loss={}; Training Accuracy={}'.format(self.loss(X, y), accuracy_score(y, y_pred)))
+		if (X_valid is not None):
+			y_pred = self.predict(X_valid)
+			print('Initial Validation Loss={}; Validation Accuracy={}'.format(self.loss(X_valid, y_valid), accuracy_score(y_valid, y_pred)))
+		print('----------------------------------------')
+
+		# Run optimisation
+		for epoch, idx_chunk in enumerate(idx_stream, 1): # Epoch cycle
+			for mini_batch in idx_chunk: # Mini-Batch cycle
+				gradients = self.dLoss_dW(X[mini_batch], Y[mini_batch])
+
+				self.W_ = self.optimiser_(self.W_, gradients, **self.optimiser_kwargs_)
+
+			# Log performance
+			y_pred = self.predict(X)
+			print('Training Loss={}; Accuracy={} after epoch {}'.format(self.loss(X, y), accuracy_score(y, y_pred), epoch))
+			if (X_valid is not None):
+				y_pred = self.predict(X_valid)
+				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(self.loss(X_valid, y_valid), accuracy_score(y_valid, y_pred), epoch))
+			print('----------------------------------------')
+
+	def fit2(self, X, y, X_valid=None, y_valid=None):
 		self.num_classes_ = np.unique(y).shape[0]
 		self.num_instances_ = utils.num_instances(X)
 		args = self._get_input_chain(X, y)
@@ -270,19 +306,19 @@ class MLP(BaseEstimator):
 
 		return dropout_masks
 
-	def dLoss_dW(self, W, X, y):
+	def dLoss_dW(self, X, y):
 		# Backprop implemented by following http://neuralnetworksanddeeplearning.com/chap2.html
+		gradients = []
 
 		# Dropout Gradients
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
 			gradients_dropout_iterator = reversed(self.dropout_masks_)
 
 		# Prediction of network w.r.t. to current W
-		activations, magnitudes = self._forward_propagation(X, W=W)
+		activations, magnitudes = self._forward_propagation(X)
 
 		# Pop weights and bias for last layer
-		b = W.pop()
-		W_ = W.pop()
+		W_ = self.W_[-2]
 
 		# Pop activations and activation magnitudes
 		y_pred = activations.pop() # Thats the prediction
@@ -308,17 +344,13 @@ class MLP(BaseEstimator):
 				de_dW *= gradients_dropout_mask[:, np.newaxis]
 
 		# Collect Gradients from last layer
-		gradients = np.concatenate([de_dW.flatten(), db_dW])
+		gradients.extend([de_dW, db_dW])
 
 		# Loop through hidden layers
-		W.append(W_)
-		W.append(b)
+		i = 0 # Index on the weights
 		while len(activations) > 0:
-			_ = W.pop() # Pop Bias term for lower layer
-			W_next = W.pop() # Weights at lower (=next) layer
-
-			b_curr = W.pop() # Pop Bias term for current layer
-			W_curr = W.pop() # Weights at current layer
+			W_next = self.W_[-2-i] # Weights at lower (=next) layer
+			W_curr = self.W_[-2-i-2] # Weights at current layer
 
 			a = activations.pop()
 			z = magnitudes.pop()
@@ -339,11 +371,11 @@ class MLP(BaseEstimator):
 					de_dW *= gradients_dropout_mask[:, np.newaxis]
 
 			# Collect Gradients
-			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
+			gradients.insert(0, db_dW)
+			gradients.insert(0, de_dW)
 
-			# Push W_curr and b_curr back to views so they can become W_next and _ for the next iteration
-			W.append(W_curr)
-			W.append(b_curr)
+			# Update index into weights
+			i += 1
 
 		return gradients
 
@@ -405,7 +437,8 @@ if (__name__ == '__main__'):
 
 		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
 		#mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
-		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=100, validation_frequency=10, optimiser='adadelta', **adadelta_params)
+		optimiser_kwargs = {'eta': 1.}
+		mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=100, validation_frequency=10, optimiser='gd', optimiser_kwargs=optimiser_kwargs)
 		#mlp.W_flat_ = np.empty(4358002)
 
 
@@ -420,8 +453,8 @@ if (__name__ == '__main__'):
 		result_dict['{}_f1_score'.format(afn)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 
 		# Plot learning curve & weight matrix
-		utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'learning_curve', afn))
-		utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'weight_matrices', afn))
+		#utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'learning_curve', afn))
+		#utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'weight_matrices', afn))
 
 	####################
 
