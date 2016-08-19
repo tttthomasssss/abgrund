@@ -437,7 +437,7 @@ if (__name__ == '__main__'):
 	#w2c = dataset_utils.fetch_google_news_word2vec_300dim_vectors()
 	vsm = RandomVectorSpaceModel()
 	vsm.construct(data[0], initialise_immediately=True)
-	gd_params = {'step_rate': 30., 'momentum': 0.95, 'momentum_type': 'nesterov'}
+	gd_params = {'step_rate': 10., 'momentum': 0.95, 'momentum_type': 'nesterov'}
 	lbfgs_params = {}
 	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
