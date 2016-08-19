@@ -442,7 +442,7 @@ if (__name__ == '__main__'):
 	#rnn = RNN(shape=[(100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10,
 	#		  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, optimiser='gd', **gd_params)
 
-	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=200, validation_frequency=10, gradient_check=False,
+	rnn = RNN(shape=[(len(vsm), 50), (100, 50), 50, (50, 5), 5], activation_fn='tanh', max_epochs=80, validation_frequency=10, gradient_check=False,
 			  word_vector_dim=50, word_vector_model=vsm, mini_batch_size=-1, update_word_vectors=True, optimiser='gd', **gd_params)
 
 	#rnn.predict_proba(data[0][:1])

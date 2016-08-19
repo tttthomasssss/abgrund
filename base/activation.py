@@ -3,22 +3,6 @@ from scipy.special import expit
 import numpy as np
 
 
-def get_activation_fn_for_string(activation):
-	if (activation == 'sigmoid'):
-		return (sigmoid, deriv_sigmoid)
-	elif (activation == 'relu'):
-		return (relu, deriv_relu)
-	elif (activation == 'tanh'):
-		return (tanh, deriv_tanh)
-	elif (activation == 'elu'):
-		return (elu, deriv_elu)
-
-
-def get_prediction_fn_for_string(prediction):
-	if (prediction == 'softmax'):
-		return (softmax, deriv_softmax)
-
-
 def softmax(x):
 	softmaxed = np.exp(x - x.max(axis=1)[:, np.newaxis]) # Numerical Stability!
 

@@ -6,7 +6,6 @@ import json
 import os
 import sys
 
-from climin import initialize
 from climin.util import iter_minibatches
 from climin.util import shaped_from_flat
 from common import dataset_utils
@@ -23,6 +22,7 @@ import numpy as np
 import scipy as sp
 
 from base import activation
+from base import initialisation
 from base import regularisation as reg
 from base import utils
 
@@ -37,16 +37,16 @@ class MLP(BaseEstimator):
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=300, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
 				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', **optimiser_kwargs):
-		self.random_state_ = self._create_random_state(random_state)
+		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
-		self.W_flat_ = self._initialise_weights(W_init, activation_fn)
-		self.activation_fn, self.deriv_activation_fn = activation.get_activation_fn_for_string(activation_fn)
-		self.prediction_fn, self.deriv_prediction_fn = activation.get_prediction_fn_for_string(prediction_fn)
+		self.W_ = self._initialise_weights(W_init, activation_fn)
+		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
+		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
 		self.optimiser = optimiser
 		self.optimiser_kwargs = optimiser_kwargs
 		self.gradient_check_ = gradient_check
 		self.lambda_ = lambda_
-		self.regularisation_, self.deriv_regularisation_ = reg.get_regularisation_fn_for_string(regularisation)
+		self.regularisation_, self.deriv_regularisation_ = (getattr(reg, '{}_regularisation'.format(regularisation)), getattr(reg, 'deriv_{}_regularisation'.format(regularisation)))
 		self.max_weight_norm_ = max_weight_norm
 		self.dropout_proba_ = self._create_dropout_prediction_proba(dropout_proba)
 		self.dropout_masks_ = self._create_dropout_masks(dropout_proba) # Be careful with dropout_proba, this fn modifies it
@@ -65,19 +65,18 @@ class MLP(BaseEstimator):
 
 	# Forward Propagation phase
 	def _forward_propagation(self, X, W=None, dropout_mode='fit'):
-		W = self.W_flat_ if W is None else W
+		W = self.W_ if W is None else W
 		activations = [X]
 		magnitudes = []
-		views = shaped_from_flat(W, self.shape_)
 		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
-		b_pred = views.pop()
-		W_pred = views.pop()
+		b_pred = W.pop()
+		W_pred = W.pop()
 
 		# Forward Propagation through hidden layers
-		while len(views) > 1:
-			W = views.pop(0)
-			b = views.pop(0)
+		while len(W) > 1:
+			W = W.pop(0)
+			b = W.pop(0)
 
 			# Dropout
 			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
@@ -116,7 +115,7 @@ class MLP(BaseEstimator):
 		return np.argmax(self.predict_proba(X), axis=1)
 
 	def loss(self, W, X, y):
-		W = self.W_flat_ if W is None else W
+		W = self.W_ if W is None else W
 		activations, _ = self._forward_propagation(X, W, dropout_mode='predict')
 		predictions = activations[-1]
 
@@ -230,37 +229,10 @@ class MLP(BaseEstimator):
 		return (diff <= error_threshold, diff, error_threshold)
 
 	def _initialise_weights(self, W_init, activation_fn):
-		self.W_flat_ = np.empty(self._count_params())
-		views = shaped_from_flat(self.W_flat_, self.shape_)
 		if (W_init == 'xavier'):
-			if (activation_fn == 'sigmoid'):
-				return initialize.randomize_uniform_sigmoid(views, self.random_state_)
-			elif (activation_fn == 'tanh'):
-				return initialize.randomize_uniform_tanh(views, self.random_state_)
-			elif (activation_fn == 'relu'):
-				return initialize.randomize_uniform_relu(views, self.random_state_)
-			else:
-				return initialize.randn(views, random_state=self.random_state_, scale=0.01)
-		else: # Normal in [0 1]
-			return initialize.randn(views, random_state=self.random_state_, scale=0.01)
-
-	def _count_params(self):
-		n_params = 0
-		for x in self.shape_:
-			if (isinstance(x, collections.Iterable)):
-				n_params += (x[0] * x[1])
-			else:
-				n_params += x
-
-		return n_params
-
-	def _create_random_state(self, random_state):
-		if (isinstance(random_state, np.random.RandomState)):
-			return random_state
-		elif (isinstance(random_state, int)):
-			return np.random.RandomState(seed=random_state)
+			return getattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))(self.shape_)
 		else:
-			return np.random.RandomState(seed=1105)
+			return initialisation.randn(self.shape_)
 
 	def _perform_dropout(self, W, dropout_mode, dropout_mask):
 		if (dropout_mask is not None):
@@ -300,7 +272,6 @@ class MLP(BaseEstimator):
 
 	def dLoss_dW(self, W, X, y):
 		# Backprop implemented by following http://neuralnetworksanddeeplearning.com/chap2.html
-		views = shaped_from_flat(W, self.shape_)
 
 		# Dropout Gradients
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -310,8 +281,8 @@ class MLP(BaseEstimator):
 		activations, magnitudes = self._forward_propagation(X, W=W)
 
 		# Pop weights and bias for last layer
-		b = views.pop()
-		W_ = views.pop()
+		b = W.pop()
+		W_ = W.pop()
 
 		# Pop activations and activation magnitudes
 		y_pred = activations.pop() # Thats the prediction
@@ -340,14 +311,14 @@ class MLP(BaseEstimator):
 		gradients = np.concatenate([de_dW.flatten(), db_dW])
 
 		# Loop through hidden layers
-		views.append(W_)
-		views.append(b)
+		W.append(W_)
+		W.append(b)
 		while len(activations) > 0:
-			_ = views.pop() # Pop Bias term for lower layer
-			W_next = views.pop() # Weights at lower (=next) layer
+			_ = W.pop() # Pop Bias term for lower layer
+			W_next = W.pop() # Weights at lower (=next) layer
 
-			b_curr = views.pop() # Pop Bias term for current layer
-			W_curr = views.pop() # Weights at current layer
+			b_curr = W.pop() # Pop Bias term for current layer
+			W_curr = W.pop() # Weights at current layer
 
 			a = activations.pop()
 			z = magnitudes.pop()
@@ -371,8 +342,8 @@ class MLP(BaseEstimator):
 			gradients = np.concatenate([de_dW.flatten(), db_dW, gradients])
 
 			# Push W_curr and b_curr back to views so they can become W_next and _ for the next iteration
-			views.append(W_curr)
-			views.append(b_curr)
+			W.append(W_curr)
+			W.append(b_curr)
 
 		return gradients
 
@@ -394,23 +365,23 @@ if (__name__ == '__main__'):
 	X_train, y_train, X_valid, y_valid, X_test, y_test = split_data_train_dev_test('20newsgroups', dataset, ratio=(0.8, 0.2), random_state=np.random.RandomState(seed=42))
 
 	######## S K L E A R N   C L A S S I F I E R S
-	print('#### SKLEARN SVM')
-	svm = LinearSVC()
-	svm.fit(X_train, y_train)
-	y_pred = svm.predict(X_test)
-	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
-	print('################')
-	result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
-	result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+	#print('#### SKLEARN SVM')
+	#svm = LinearSVC()
+	#svm.fit(X_train, y_train)
+	#y_pred = svm.predict(X_test)
+	#print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	#print('################')
+	#result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
+	#result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 
-	print('#### SKLEARN MNB')
-	mnb = MultinomialNB()
-	mnb.fit(X_train, y_train)
-	y_pred = mnb.predict(X_test)
-	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
-	print ('################')
-	result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
-	result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
+	#print('#### SKLEARN MNB')
+	#mnb = MultinomialNB()
+	#mnb.fit(X_train, y_train)
+	#y_pred = mnb.predict(X_test)
+	#print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
+	#print ('################')
+	#result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
+	#result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
 	##############################################
 
 	timestamped_foldername = path_utils.timestamped_foldername()

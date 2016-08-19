@@ -4,13 +4,6 @@ from climin.util import shaped_from_flat
 import numpy as np
 
 
-def get_regularisation_fn_for_string(regularisation):
-	if (regularisation == 'l2'):
-		return l2_regularisation, deriv_l2_regularisation
-	elif (regularisation == 'l1'):
-		return l1_regularisation, deriv_l1_regularisation
-
-
 def l2_regularisation(lambda_, W, shape, skip_first=False): # skip_first responsible for skipping the lookup layer
 	views = shaped_from_flat(W, shape)
 	views = views if not skip_first else views[1:]

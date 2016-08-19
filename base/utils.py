@@ -95,3 +95,12 @@ def plot_weight_matrix(views, plot_path):
 			pl.matshow(W, cmap=pl.cm.gray)
 			plt.savefig(os.path.join(plot_path, plot_name))
 			plt.close()
+
+
+def create_random_state(random_state):
+	if (isinstance(random_state, np.random.RandomState)):
+		return random_state
+	elif (isinstance(random_state, int)):
+		return np.random.RandomState(seed=random_state)
+	else:
+		return np.random.RandomState(seed=1105)
