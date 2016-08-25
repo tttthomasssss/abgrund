@@ -1,6 +1,4 @@
 __author__ = 'thomas'
-import operator
-
 import numpy as np
 
 
