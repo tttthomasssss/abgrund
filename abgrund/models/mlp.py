@@ -29,13 +29,13 @@ from abgrund.base import utils
 #		Backprop into input vectors!!!
 #		Re-Test Gradient check
 class MLP(BaseEstimator):
-	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', W_init='xavier', gradient_check=False,
+	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', w_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=20, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
 				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', optimiser_kwargs={}):
 		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
-		self.W_ = self._initialise_weights(W_init, activation_fn)
+		self.weights_ = self._initialise_weights(w_init, activation_fn)
 		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
 		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
 		self.optimiser_ = getattr(optimisation, optimiser)
@@ -65,14 +65,14 @@ class MLP(BaseEstimator):
 		magnitudes = []
 		dropout_iterator = iter(self.dropout_masks_) if dropout_mode == 'fit' else iter(self.dropout_proba_)
 
-		idx = list(range(len(self.W_)))
-		b_pred = self.W_[idx.pop()]
-		W_pred = self.W_[idx.pop()]
+		idx = list(range(len(self.weights_)))
+		b_pred = self.weights_[idx.pop()]
+		W_pred = self.weights_[idx.pop()]
 
 		# Forward Propagation through hidden layers
 		while len(idx) > 1:
-			W = self.W_[idx.pop(0)]
-			b = self.W_[idx.pop(0)]
+			W = self.weights_[idx.pop(0)]
+			b = self.weights_[idx.pop(0)]
 
 			# Dropout
 			dropout_mask = next(dropout_iterator) if (len(self.dropout_masks_) > 0) else None
@@ -117,7 +117,7 @@ class MLP(BaseEstimator):
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
 
 		# Add regularisation
-		reg = self.regularisation_(self.lambda_, self.W_)
+		reg = self.regularisation_(self.lambda_, self.weights_)
 		loss += (reg / (self.num_instances_ * 2))
 
 		return loss
@@ -146,13 +146,13 @@ class MLP(BaseEstimator):
 		# Run optimisation
 		for epoch, idx_chunk in enumerate(idx_stream, 1): # Epoch cycle
 			for mini_batch in idx_chunk: # Mini-Batch cycle
-				gradients = self.dLoss_dW(X[mini_batch], Y[mini_batch])
+				gradients = self._backprop(X[mini_batch], Y[mini_batch])
 
-				self.W_ = self.optimiser_(self.W_, gradients, **self.optimiser_kwargs_)
+				self.weights_ = self.optimiser_(self.weights_, gradients, **self.optimiser_kwargs_)
 
 				# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 				if (self.max_weight_norm_ is not None):
-					self.W_ = constraints.max_weight_norm(weights=self.W_, max_norm=self.max_weight_norm_)
+					self.weights_ = constraints.max_weight_norm(weights=self.weights_, max_norm=self.max_weight_norm_)
 
 			# Log performance
 			y_pred = self.predict(X)
@@ -169,7 +169,7 @@ class MLP(BaseEstimator):
 			return curr_patience <= 0 or loss <= 0
 
 	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2):
-		dg_dW = self.dLoss_dW(W, X, utils.one_hot(y, self.num_classes_))
+		dg_dW = self._backprop(W, X, utils.one_hot(y, self.num_classes_))
 
 		num_dg_dW = np.zeros(W.shape)
 		perturb = np.zeros(W.shape)
@@ -229,7 +229,7 @@ class MLP(BaseEstimator):
 
 		return dropout_masks
 
-	def dLoss_dW(self, X, y):
+	def _backprop(self, X, y):
 		# Backprop implemented by following http://neuralnetworksanddeeplearning.com/chap2.html
 		gradients = []
 
@@ -241,7 +241,7 @@ class MLP(BaseEstimator):
 		activations, magnitudes = self._forward_propagation(X)
 
 		# Pop weights and bias for last layer
-		W_ = self.W_[-2]
+		W_ = self.weights_[-2]
 
 		# Pop activations and activation magnitudes
 		y_pred = activations.pop() # Thats the prediction
@@ -272,8 +272,8 @@ class MLP(BaseEstimator):
 		# Loop through hidden layers
 		i = 0 # Index on the weights
 		while len(activations) > 0:
-			W_next = self.W_[-2-i] # Weights at lower (=next) layer
-			W_curr = self.W_[-2-i-2] # Weights at current layer
+			W_next = self.weights_[-2-i] # Weights at lower (=next) layer
+			W_curr = self.weights_[-2-i-2] # Weights at current layer
 
 			a = activations.pop()
 			z = magnitudes.pop()

@@ -23,7 +23,7 @@ def num_instances(X):
 
 def gradient_check(nn, X, y, epsilon=0.001, error_threshold=0.01):
 	#http://www.wildml.com/2015/09/recurrent-neural-networks-tutorial-part-2-implementing-a-language-model-rnn-with-python-numpy-and-theano/
-	gradients = nn.dLoss_dW()
+	gradients = nn._backprop()
 
 
 def plot_learning_curve(loss_history, plot_path):
