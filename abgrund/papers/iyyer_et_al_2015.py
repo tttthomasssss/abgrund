@@ -24,13 +24,13 @@ if (__name__ == '__main__'):
     args = parser.parse_args()
 
     # Split the dataset
-    train_data, test_data, dev_data = sts.create_train_test_dev_split(dataset_path=args.dataset_path, fine_grained=False,
+    train_data, test_data, dev_data = sts.create_train_test_dev_split(dataset_path=args.dataset_path, fine_grained=True,
                                                                       lowercase=True, use_phrase_labels=True)
 
     # Load the word2vec vectors
-    word2vec = Word2Vec.load_word2vec_format('/Users/thomas/DevSandbox/EpicDataShelf/tag-lab/wikipedia/word2vectors/word2vec_skip-gram_50_0.000100_10.bin', binary=True)
-    p_keep_word = 0.7
-    vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec')
+    #word2vec = Word2Vec.load_word2vec_format('/Users/thomas/DevSandbox/EpicDataShelf/tag-lab/wikipedia/word2vectors/word2vec_skip-gram_50_0.000100_10.bin', binary=True)
+    #p_keep_word = 0.7
+    #vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec')
 
     # Load the GloVe vectors
     #p = os.path.join(args.vector_path, args.vector_file)
@@ -41,10 +41,10 @@ if (__name__ == '__main__'):
     #vsm = VectorSpaceModel(vsm=glove, vector_shape=glove.no_components, vsm_type='glove')
 
     # Initialise the vector space with random vectors
-    #p_keep_word = 0.5
-    #rnd_vecs = RandomVectorSpaceModel(ndim=300)
-    #rnd_vecs.construct(train_data[0], initialise_immediately=True)
-    #vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
+    p_keep_word = 0.5
+    rnd_vecs = RandomVectorSpaceModel(ndim=50)
+    rnd_vecs.construct(train_data[0], initialise_immediately=True)
+    vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
 
 
     # Transform the dataset
@@ -74,7 +74,7 @@ if (__name__ == '__main__'):
     #mlp = MLP(shape=[(50, 2), 2], dropout_proba=None, activation_fn='sigmoid', max_epochs=100,
      #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1}, mini_batch_size=50)
 
-    mlp = MLP(shape=[(50, 50), 50, (50, 2), 2], activation_fn='relu', max_epochs=10, optimiser='gd',
+    mlp = MLP(shape=[(50, 50), 50, (50, 5), 5], activation_fn='relu', max_epochs=10, optimiser='adagrad',
               optimiser_kwargs={'eta': 0.1}, mini_batch_size=30)
 
     mlp.fit(X_train, y_train, X_dev, y_dev)

@@ -38,8 +38,8 @@ class MLP(BaseEstimator):
 		self.weights_ = self._initialise_weights(w_init, activation_fn)
 		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
 		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
-		self.optimiser_ = getattr(optimisation, optimiser)
-		self.optimiser_kwargs_ = optimiser_kwargs
+		optimiser_kwargs['shape'] = self.shape_
+		self.optimiser_ = getattr(optimisation, optimiser)(**optimiser_kwargs)
 		self.gradient_check_ = gradient_check
 		self.lambda_ = lambda_
 		self.regularisation_, self.deriv_regularisation_ = (getattr(reg, '{}_regularisation'.format(regularisation)), getattr(reg, 'deriv_{}_regularisation'.format(regularisation)))
@@ -148,7 +148,7 @@ class MLP(BaseEstimator):
 			for mini_batch in idx_chunk: # Mini-Batch cycle
 				gradients = self._backprop(X[mini_batch], Y[mini_batch])
 
-				self.weights_ = self.optimiser_(self.weights_, gradients, **self.optimiser_kwargs_)
+				self.weights_ = self.optimiser_(weights=self.weights_, gradients=gradients)
 
 				# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 				if (self.max_weight_norm_ is not None):
