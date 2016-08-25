@@ -3,7 +3,7 @@ import numpy as np
 
 
 class GradientDescent(): # Gradient Descent (can handle SGD, Mini-Batch SGD and Batch GD)
-	def __init__(self, eta, **_):
+	def __init__(self, eta=0.01, **_):
 		self.eta_ = eta
 
 	def __call__(self, *_, **kwargs):
@@ -16,21 +16,6 @@ class GradientDescent(): # Gradient Descent (can handle SGD, Mini-Batch SGD and 
 			w_updated.append(W - (self.eta_ * dg_dW))
 
 		return w_updated
-
-
-def gd(**kwargs):
-	return GradientDescent(**kwargs)
-
-def adagrad(**kwargs):
-	return AdaGrad(**kwargs)
-
-#def gd(weights, gradients, **kwargs): # Gradient Descent (can handle SGD, Mini-Batch SGD and Batch GD)
-#	w_updated = []
-#	eta = kwargs.pop('eta', 0.01)
-#	for W, dg_dW in zip(weights, gradients):
-#		w_updated.append(W - (eta * dg_dW))
-#
-#	return w_updated
 
 
 class AdaGrad():
@@ -59,6 +44,14 @@ class AdaGrad():
 			w_updated.append(W - (ada * dg_dW))
 
 		return w_updated
+
+
+def gd(**kwargs):
+	return GradientDescent(**kwargs)
+
+
+def adagrad(**kwargs):
+	return AdaGrad(**kwargs)
 
 # Vanilla SGD (+ with tricks),
 # AdaGrad
