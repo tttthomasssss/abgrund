@@ -138,7 +138,7 @@ if (__name__ == '__main__'):
             experiments.append(line)
 
     for idx, (vsm_type, vector_dim, vector_file, use_phrase_labels, fine_grained, p_keep_word, regularisation, lambda_,
-        mini_batch_size, optimiser, eta, max_epochs, composition, layers, activation_function) in enumerate(experiments, 1):
+        mini_batch_size, eta, optimiser, max_epochs, composition, layers, activation_function) in enumerate(experiments, 1):
 
         print('Running experiment {} of {}...'.format(idx, len(experiments)))
 
