@@ -75,11 +75,11 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
         vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
 
         # Transform the dataset
-        X_train = vsm.transform(train_data[0], composition=composition, p_keep_word=float(p_keep_word))
+        X_train = vsm.transform(train_data[0], composition=getattr(np, composition), p_keep_word=float(p_keep_word))
         y_train = np.array(train_data[1])
-        X_test = vsm.transform(test_data[0], composition=composition)
+        X_test = vsm.transform(test_data[0], composition=getattr(np, composition))
         y_test = np.array(test_data[1])
-        X_dev = vsm.transform(dev_data[0], composition=composition)
+        X_dev = vsm.transform(dev_data[0], composition=getattr(np, composition))
         y_dev = np.array(dev_data[1])
 
         # Learn the model
@@ -156,7 +156,7 @@ if (__name__ == '__main__'):
             'optimiser': optimiser,
             'eta': float(eta),
             'max_epochs': int(max_epochs),
-            'composition': getattr(np, composition),
+            'composition': composition,
             'layers': int(layers),
             'activation_function': activation_function
         }
