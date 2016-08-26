@@ -43,7 +43,7 @@ def config():
     optimiser = ''
     eta = -1.0
     max_epochs = -1
-    composition = ''
+    composition = None
     layers = 0
     activation_function = ''
 
@@ -75,11 +75,11 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
         vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
 
         # Transform the dataset
-        X_train = vsm.transform(train_data[0], composition=getattr(np, composition), p_keep_word=float(p_keep_word))
+        X_train = vsm.transform(train_data[0], composition=composition, p_keep_word=float(p_keep_word))
         y_train = np.array(train_data[1])
-        X_test = vsm.transform(test_data[0], composition=getattr(np, composition))
+        X_test = vsm.transform(test_data[0], composition=composition)
         y_test = np.array(test_data[1])
-        X_dev = vsm.transform(dev_data[0], composition=getattr(np, composition))
+        X_dev = vsm.transform(dev_data[0], composition=composition)
         y_dev = np.array(dev_data[1])
 
         # Learn the model
