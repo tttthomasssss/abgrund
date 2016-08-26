@@ -49,15 +49,11 @@ class MLP(BaseEstimator):
 		self.max_epochs_ = np.inf if max_epochs is None or max_epochs < 0 else max_epochs
 		self.improvement_threshold_ = improvement_threshold
 		self.patience_ = patience
-		self.best_weights_ = []
 		self.validation_frequency_ = validation_frequency
 		self.loss_history_ = []
 		self.mini_batch_size_ = mini_batch_size
 		self.num_classes_ = 0
 		self.num_instances_ = 0
-
-	def best_weights(self, flat=False):
-		return self.best_weights_
 
 	# Forward Propagation phase
 	def _forward_propagation(self, X, dropout_mode='fit'):
@@ -127,6 +123,10 @@ class MLP(BaseEstimator):
 		self.num_classes_ = np.unique(y).shape[0]
 		self.num_instances_ = utils.num_instances(X)
 		Y = utils.one_hot(y, self.num_classes_)
+
+		# Record best weights
+		best_acc = -np.inf
+		self.best_weights_ = self.weights_
 
 		# Build index cycles over input data
 		idx = np.arange(X.shape[0])
