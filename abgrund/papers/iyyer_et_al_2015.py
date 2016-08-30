@@ -30,135 +30,131 @@ ex.observers.append(MongoObserver.create(db_name='Iyyer_et_al_2015'))
 
 @ex.config
 def config():
-    config_name = ''
-    vsm_type = ''
-    vector_dim = -1
-    vector_file = ''
-    use_phrase_labels = False
-    fine_grained = False
-    p_keep_word = -1.0
-    regularisation = ''
-    lambda_ = 0.0
-    mini_batch_size = 0
-    optimiser = ''
-    eta = -1.0
-    max_epochs = -1
-    composition = None
-    layers = 0
-    activation_function = ''
+	config_name = ''
+	vsm_type = ''
+	vector_dim = -1
+	vector_file = ''
+	use_phrase_labels = False
+	fine_grained = False
+	p_keep_word = -1.0
+	regularisation = ''
+	lambda_ = 0.0
+	mini_batch_size = 0
+	optimiser = ''
+	eta = -1.0
+	max_epochs = -1
+	composition = None
+	layers = 0
+	activation_function = ''
 
 
 @ex.main
 def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_grained, p_keep_word, regularisation,
-        lambda_, mini_batch_size, optimiser, eta, max_epochs, composition, layers, activation_function):
+		lambda_, mini_batch_size, optimiser, eta, max_epochs, composition, layers, activation_function):
 
-    # Split the dataset
-        train_data, test_data, dev_data = sts.create_train_test_dev_split(dataset_path=args.dataset_path, fine_grained=fine_grained,
-                                                                          lowercase=True, use_phrase_labels=use_phrase_labels)
+	# Split the dataset
+	train_data, test_data, dev_data = sts.create_train_test_dev_split(dataset_path=args.dataset_path, fine_grained=fine_grained,
+																	  lowercase=True, use_phrase_labels=use_phrase_labels)
 
-        # Load the word2vec vectors
-        #word2vec = Word2Vec.load_word2vec_format('/Users/thomas/DevSandbox/EpicDataShelf/tag-lab/wikipedia/word2vectors/word2vec_skip-gram_50_0.000100_10.bin', binary=True)
-        #p_keep_word = 0.7
-        #vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec')
+	# Load the word2vec vectors
+	#word2vec = Word2Vec.load_word2vec_format('/Users/thomas/DevSandbox/EpicDataShelf/tag-lab/wikipedia/word2vectors/word2vec_skip-gram_50_0.000100_10.bin', binary=True)
+	#p_keep_word = 0.7
+	#vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec')
 
-        # Load the GloVe vectors
-        #p = os.path.join(args.vector_path, args.vector_file)
-        #glove = Glove.load_stanford(p)
+	# Load the GloVe vectors
+	#p = os.path.join(args.vector_path, args.vector_file)
+	#glove = Glove.load_stanford(p)
 
-        # Initialise the vector space with GloVe vectors
-        #p_keep_word = 0.7
-        #vsm = VectorSpaceModel(vsm=glove, vector_shape=glove.no_components, vsm_type='glove')
+	# Initialise the vector space with GloVe vectors
+	#p_keep_word = 0.7
+	#vsm = VectorSpaceModel(vsm=glove, vector_shape=glove.no_components, vsm_type='glove')
 
-        # Initialise the vector space with random vectors
-        rnd_vecs = RandomVectorSpaceModel(ndim=int(vector_dim))
-        rnd_vecs.construct(train_data[0], initialise_immediately=True)
-        vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
+	# Initialise the vector space with random vectors
+	rnd_vecs = RandomVectorSpaceModel(ndim=int(vector_dim))
+	rnd_vecs.construct(train_data[0], initialise_immediately=True)
+	vsm = VectorSpaceModel(vsm=rnd_vecs, vector_shape=rnd_vecs.dimensionality(), vsm_type='random')
 
-        # Transform the dataset
-        X_train = vsm.transform(train_data[0], composition=getattr(np, composition), p_keep_word=float(p_keep_word))
-        y_train = np.array(train_data[1])
-        X_test = vsm.transform(test_data[0], composition=getattr(np, composition))
-        y_test = np.array(test_data[1])
-        X_dev = vsm.transform(dev_data[0], composition=getattr(np, composition))
-        y_dev = np.array(dev_data[1])
+	# Transform the dataset
+	X_train = vsm.transform(train_data[0], composition=getattr(np, composition), p_keep_word=float(p_keep_word))
+	y_train = np.array(train_data[1])
+	X_test = vsm.transform(test_data[0], composition=getattr(np, composition))
+	y_test = np.array(test_data[1])
+	X_dev = vsm.transform(dev_data[0], composition=getattr(np, composition))
+	y_dev = np.array(dev_data[1])
 
-        # Learn the model
-        #mlp = MLP(shape=[(50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=100,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
-        #mlp = MLP(shape=[(50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=500,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1}) # BASED ON BATCH GD
-        #mlp = MLP(shape=[(50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='tanh', max_epochs=100,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.01})
-        #mlp = MLP(shape=[(50, 50), 50, (50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=500,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
-        #mlp = MLP(shape=[(50, 50), 50, (50, 50), 50, (50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=1500,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
+	# Learn the model
+	#mlp = MLP(shape=[(50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=100,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
+	#mlp = MLP(shape=[(50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=500,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1}) # BASED ON BATCH GD
+	#mlp = MLP(shape=[(50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='tanh', max_epochs=100,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.01})
+	#mlp = MLP(shape=[(50, 50), 50, (50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=500,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
+	#mlp = MLP(shape=[(50, 50), 50, (50, 50), 50, (50, 50), 50, (50, 5), 5], dropout_proba=None, activation_fn='relu', max_epochs=1500,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1})
 
-        # Binary
-        #mlp = MLP(shape=[(50, 50), 50, (50, 2), 2], dropout_proba=None, activation_fn='relu', max_epochs=100,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 10000}, mini_batch_size=50)
+	# Binary
+	#mlp = MLP(shape=[(50, 50), 50, (50, 2), 2], dropout_proba=None, activation_fn='relu', max_epochs=100,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 10000}, mini_batch_size=50)
 
-        #mlp = MLP(shape=[(50, 2), 2], dropout_proba=None, activation_fn='sigmoid', max_epochs=100,
-         #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1}, mini_batch_size=50)
+	#mlp = MLP(shape=[(50, 2), 2], dropout_proba=None, activation_fn='sigmoid', max_epochs=100,
+	 #         validation_frequency=10, optimiser='gd', optimiser_kwargs={'eta': 0.1}, mini_batch_size=50)
 
-        shape = []
-        for i in range(layers-1):
-            shape.append((vector_dim, vector_dim)) # Hidden Layers
-            shape.append(vector_dim) # Hidden Layer Bias
+	shape = []
+	for i in range(layers-1):
+		shape.append((vector_dim, vector_dim)) # Hidden Layers
+		shape.append(vector_dim) # Hidden Layer Bias
 
-        shape.append((vector_dim, 5 if fine_grained else 2)) # Prediction Layer
-        shape.append(5 if fine_grained else 2) # Prediction Layer Bias
+	shape.append((vector_dim, 5 if fine_grained else 2)) # Prediction Layer
+	shape.append(5 if fine_grained else 2) # Prediction Layer Bias
 
-        mlp = MLP(shape=shape, activation_fn=activation_function, max_epochs=max_epochs, optimiser=optimiser,
-                  optimiser_kwargs={'eta': eta, 'noise_eta': 0.01, 'mu': 0.99, 'momentum': 'standard'}, mini_batch_size=mini_batch_size,
-                  regularisation=regularisation, lambda_=lambda_, shuffle=False, shuffle_mini_batches=True)
+	mlp = MLP(shape=shape, activation_fn=activation_function, max_epochs=max_epochs, optimiser=optimiser,
+			  optimiser_kwargs={'eta': eta, 'noise_eta': 0.01, 'mu': 0.99, 'momentum': 'standard'}, mini_batch_size=mini_batch_size,
+			  regularisation=regularisation, lambda_=lambda_, shuffle=False, shuffle_mini_batches=True)
 
-        mlp.fit(X_train, y_train, X_dev, y_dev)
-        y_pred = mlp.predict(X_test)
+	mlp.fit(X_train, y_train, X_dev, y_dev)
+	y_pred = mlp.predict(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        print('Accuracy: {}'.format(acc))
-        print('----------------------------------------------------')
+	acc = accuracy_score(y_test, y_pred)
+	print('Accuracy: {}'.format(acc))
+	print('----------------------------------------------------')
 
-        return acc
+	return acc
 
 if (__name__ == '__main__'):
-    args = parser.parse_args()
+	args = parser.parse_args()
 
-    print(os.path.dirname(os.path.dirname(__file__)))
-    print(os.path.dirname(__file__))
-    print()
+	# Load experiment id file
+	with open(os.path.join(PROJECT_PATH, 'resources', 'parameter_optimisation', args.experiment_file), 'r') as csv_file:
+		csv_reader = csv.reader(csv_file)
+		experiments = []
 
-    # Load experiment id file
-    with open(os.path.join(PROJECT_PATH, 'resources', 'parameter_optimisation', args.experiment_file), 'r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        experiments = []
+		for line in csv_reader:
+			experiments.append(line)
 
-        for line in csv_reader:
-            experiments.append(line)
+	for idx, (vsm_type, vector_dim, vector_file, use_phrase_labels, fine_grained, p_keep_word, regularisation, lambda_,
+		mini_batch_size, eta, optimiser, max_epochs, composition, layers, activation_function) in enumerate(experiments, 1):
 
-    for idx, (vsm_type, vector_dim, vector_file, use_phrase_labels, fine_grained, p_keep_word, regularisation, lambda_,
-        mini_batch_size, eta, optimiser, max_epochs, composition, layers, activation_function) in enumerate(experiments, 1):
+		print('Running experiment {} of {}...'.format(idx, len(experiments)))
 
-        print('Running experiment {} of {}...'.format(idx, len(experiments)))
+		config_dict = {
+			'config_name': args.config_name,
+			'vsm_type': vsm_type,
+			'vector_dim': int(vector_dim),
+			'vector_file': vector_file,
+			'use_phrase_labels': use_phrase_labels=='True',
+			'fine_grained': fine_grained=='True',
+			'p_keep_word': float(p_keep_word),
+			'regularisation': regularisation,
+			'lambda_': float(lambda_),
+			'mini_batch_size': int(mini_batch_size),
+			'optimiser': optimiser,
+			'eta': float(eta),
+			'max_epochs': int(max_epochs),
+			'composition': composition,
+			'layers': int(layers),
+			'activation_function': activation_function
+		}
 
-        config_dict = {
-            'config_name': args.config_name,
-            'vsm_type': vsm_type,
-            'vector_dim': int(vector_dim),
-            'vector_file': vector_file,
-            'use_phrase_labels': use_phrase_labels=='True',
-            'fine_grained': fine_grained=='True',
-            'p_keep_word': float(p_keep_word),
-            'regularisation': regularisation,
-            'lambda_': float(lambda_),
-            'mini_batch_size': int(mini_batch_size),
-            'optimiser': optimiser,
-            'eta': float(eta),
-            'max_epochs': int(max_epochs),
-            'composition': composition,
-            'layers': int(layers),
-            'activation_function': activation_function
-        }
-
-        ex.run(config_updates=config_dict)
+		ex.run(config_updates=config_dict)

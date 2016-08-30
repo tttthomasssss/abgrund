@@ -25,10 +25,17 @@ class CNN(BaseEstimator):
 				 gradient_check=False, regularisation='l2', lambda_=0.01, dropout_proba=None,
 				 random_state=np.random.RandomState(seed=1105), max_epochs=20, improvement_threshold=0.995,
 				 patience=np.inf, validation_frequency=100, max_weight_norm=None, mini_batch_size=50, optimiser='gd',
-				 optimiser_kwargs={}, filter_ngram_ranges=[2, 3]):
+				 optimiser_kwargs={}, filter_ngram_ranges=[2, 3], num_filters=100):
 		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
-		self.weights_ = self._initialise_weights(w_init, activation_fn)
+		self.vector_space_model_ = vector_space_model
+		self.filter_ngram_ranges_ = filter_ngram_ranges
+		self.num_unique_filters_ = len(filter_ngram_ranges)
+		self.num_filters_ = num_filters
+		self.feature_maps_ = []
+		self.max_pooling_ = []
+		self.conv_weights_ = self._initialise_conv_weights(w_init, activation_fn)
+		self.weights_ = self._initialise_weights(w_init, activation_fn, self.shape_)
 		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
 		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
 		optimiser_kwargs['shape'] = self.shape_
@@ -47,10 +54,6 @@ class CNN(BaseEstimator):
 		self.mini_batch_size_ = mini_batch_size
 		self.num_classes_ = 0
 		self.num_instances_ = 0
-		self.vector_space_model_ = vector_space_model
-		self.filter_ngram_ranges_ = filter_ngram_ranges
-		self.num_filters_ = len(filter_ngram_ranges)
-		self.feature_maps_ = []
 
 	# Forward Propagation phase
 	def _forward_propagation(self, doc, dropout_mode='fit'):
@@ -58,12 +61,17 @@ class CNN(BaseEstimator):
 
 		for idx, filter in enumerate(self.filter_ngram_ranges_):
 			# Convolution
-			for fmap, (w, b) in zip(self.feature_maps_[idx], self.conv_weights_[idx]):
+			for w, b in self.conv_weights_[idx]:
+				feature_map = []
 				for i in range(X.shape[0] - filter + 1):
-					fmap[i] = self.activation_fn((w * X[i:i+filter-1]) + b)
+					feature_map.append(self.activation_fn(np.sum(w * X[i:i+filter]) + b)) # X[i:i+filter-1]), python indexes [a, b)
 
 				# Max Pooling
-				self.max_pooling_[idx] = np.max(fmap)
+				self.max_pooling_.append(np.max(feature_map))
+
+		'''
+		self.max_pooling_ contains all of the maxed features that represent the penultimate feature vector to be passed into the softmax classifier
+		'''
 
 		# Concatenate Pooling Features and predict
 		idx = list(range(len(self.weights_)))
@@ -136,15 +144,11 @@ class CNN(BaseEstimator):
 
 		return loss
 
-	def fit(self, X, y, X_valid, y_valid):
+	def fit(self, docs, y, docs_valid, y_valid):
 		# Some initial administrative stuff
 		self.num_classes_ = np.unique(y).shape[0]
-		self.num_instances_ = utils.num_instances(X)
+		self.num_instances_ = utils.num_instances(docs)
 		Y = utils.one_hot(y, self.num_classes_)
-
-		# Record best weights
-		best_acc = -np.inf
-		self.best_weights_ = self.weights_
 
 		# Build index cycles over input data
 		idx = np.arange(X.shape[0])
@@ -205,11 +209,21 @@ class CNN(BaseEstimator):
 
 		return (diff <= error_threshold, diff, error_threshold)
 
-	def _initialise_weights(self, W_init, activation_fn):
-		if (W_init == 'xavier' and hasattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))):
-			return getattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))(self.shape_)
+	def _initialise_weights(self, w_init, activation_fn, shape):
+		if (w_init == 'xavier' and hasattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))):
+			return getattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))(shape)
 		else:
 			return initialisation.randn(self.shape_)
+
+	def _initialise_conv_weights(self, w_init, activation_fn):
+		conv_weights = []
+		for idx, ngram_range in enumerate(self.filter_ngram_ranges_):
+			conv_weights.append([])
+			for i in range(self.num_filters_):
+				w = self._initialise_weights(w_init, activation_fn, [(ngram_range, self.vector_space_model_.vector_shape)])[0]
+				conv_weights[idx].append((w, 1)) # TODO: remove the hardcoded bias term...
+
+		return conv_weights
 
 	def _perform_dropout(self, W, dropout_mode, dropout_mask):
 		if (dropout_mask is not None):

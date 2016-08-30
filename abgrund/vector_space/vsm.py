@@ -23,6 +23,10 @@ class VectorSpaceModel(object):
 		}
 		self.oov_ = {}
 
+	@property
+	def vector_shape(self):
+		return self.vector_shape_
+
 	def __getitem__(self, item):
 		return getattr(self, '_{}_getitem'.format(self.vsm_type_))(item)
 
