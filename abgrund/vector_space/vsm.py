@@ -90,3 +90,24 @@ class VectorSpaceModel(object):
 			X[idx] = composition(A, axis=0)
 
 		return X
+
+	def concatenate_vectors(self, document, p_keep_word=1.0):
+
+		# Sample initial document
+		idx = 0
+		if (p_keep_word < 1.0):
+			sampled = False
+			idx = -1
+
+			while not sampled:
+				sampled = (self.random_state_.binomial(1, p_keep_word, (1,))[0] == 1)
+				idx += 1
+
+		X = self.vsm_[document[idx]]
+
+		# Concatenate rest with word dropout sampling
+		for w in document[idx+1:]:
+			if (self.random_state_.binomial(1, p_keep_word, (1,))[0] == 1):
+				X = np.vstack((X, self.vsm_[w]))
+
+		return X

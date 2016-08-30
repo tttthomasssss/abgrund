@@ -110,8 +110,8 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
         shape.append(5 if fine_grained else 2) # Prediction Layer Bias
 
         mlp = MLP(shape=shape, activation_fn=activation_function, max_epochs=max_epochs, optimiser=optimiser,
-                  optimiser_kwargs={'eta': eta}, mini_batch_size=mini_batch_size, regularisation=regularisation,
-                  lambda_=lambda_)
+                  optimiser_kwargs={'eta': eta, 'noise_eta': 0.01, 'mu': 0.99, 'momentum': 'standard'}, mini_batch_size=mini_batch_size,
+                  regularisation=regularisation, lambda_=lambda_, shuffle=False, shuffle_mini_batches=True)
 
         mlp.fit(X_train, y_train, X_dev, y_dev)
         y_pred = mlp.predict(X_test)

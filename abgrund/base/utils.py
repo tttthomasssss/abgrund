@@ -3,6 +3,8 @@ import os
 
 from matplotlib import pyplot as plt
 from matplotlib import pylab as pl
+from sklearn.utils import shuffle
+
 import numpy as np
 import seaborn as sns
 
@@ -77,3 +79,11 @@ def create_random_state(random_state):
 		return np.random.RandomState(seed=random_state)
 	else:
 		return np.random.RandomState(seed=1105)
+
+
+def shuffle_mini_batch(X, Y):
+	return shuffle(X, Y)
+
+
+def dont_shuffle_mini_batch(X, Y):
+	return (X, Y)

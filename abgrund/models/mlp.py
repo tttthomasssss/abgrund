@@ -1,17 +1,10 @@
 __author__ = 'thomas'
-import collections
-import copy
 import itertools
-import json
-import os
-import sys
 
 from sklearn.base import BaseEstimator
 from sklearn.metrics import accuracy_score
-from sklearn.metrics import f1_score
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.svm import LinearSVC
 from sklearn.utils.extmath import safe_sparse_dot
+from sklearn.utils import shuffle
 import numpy as np
 import scipy as sp
 
@@ -32,7 +25,8 @@ class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', w_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
 				 max_epochs=20, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
-				 max_weight_norm=None, mini_batch_size=50, optimiser='gd', optimiser_kwargs={}):
+				 max_weight_norm=None, mini_batch_size=50, shuffle=False, shuffle_mini_batches=False, optimiser='gd',
+				 optimiser_kwargs={}):
 		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
 		self.weights_ = self._initialise_weights(w_init, activation_fn)
@@ -52,6 +46,8 @@ class MLP(BaseEstimator):
 		self.validation_frequency_ = validation_frequency
 		self.loss_history_ = []
 		self.mini_batch_size_ = mini_batch_size
+		self.shuffle_ = shuffle
+		self.shuffle_mini_batch_ = utils.shuffle_mini_batch if shuffle_mini_batches else utils.dont_shuffle_mini_batch
 		self.num_classes_ = 0
 		self.num_instances_ = 0
 
@@ -124,10 +120,6 @@ class MLP(BaseEstimator):
 		self.num_instances_ = utils.num_instances(X)
 		Y = utils.one_hot(y, self.num_classes_)
 
-		# Record best weights
-		best_acc = -np.inf
-		self.best_weights_ = self.weights_
-
 		# Build index cycles over input data
 		idx = np.arange(X.shape[0])
 		if (self.mini_batch_size_ is not None and self.mini_batch_size_ > 0):
@@ -145,10 +137,11 @@ class MLP(BaseEstimator):
 
 		# Run optimisation
 		for epoch, idx_chunk in enumerate(idx_stream, 1): # Epoch cycle
-			for mini_batch in idx_chunk: # Mini-Batch cycle
-				gradients = self._backprop(X[mini_batch], Y[mini_batch])
+			for training_step, mini_batch in enumerate(idx_chunk, 0): # Mini-Batch cycle
+				gradients = self._backprop(*self.shuffle_mini_batch_(X[mini_batch], Y[mini_batch]))
 
-				self.weights_ = self.optimiser_(weights=self.weights_, gradients=gradients)
+				self.weights_ = self.optimiser_(weights=self.weights_, gradients=gradients, time_step=training_step,
+												random_state=self.random_state_)
 
 				# Max Norm constraint, see Hinton (2012) or Kim (2014) - often used in conjunction with dropout
 				if (self.max_weight_norm_ is not None):
@@ -161,6 +154,9 @@ class MLP(BaseEstimator):
 				y_pred = self.predict(X_valid)
 				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(self.loss(X_valid, y_valid), accuracy_score(y_valid, y_pred), epoch))
 			print('----------------------------------------')
+
+			if (self.shuffle_): # Shuffle the input data
+				X, Y = shuffle(X, Y, random_state=self.random_state_)
 
 	def _stopping_criterion(self, curr_iter, curr_patience, loss):
 		if (np.isinf(curr_patience)):
@@ -301,94 +297,3 @@ class MLP(BaseEstimator):
 			i += 2
 
 		return gradients
-
-if (__name__ == '__main__'):
-	result_dict = {}
-	#wrt = np.empty(159010)
-	#initialize.randomize_normal(wrt, 0, 1)
-
-	# Infer num params
-	#shapes = [(i,) if isinstance(i, int) else i for i in shapes]
-	#sizes = [np.prod(i) for i in shapes]
-
-	#views = shaped_from_flat(wrt, tmpl)
-	#wrt = initialize.randomize_uniform_sigmoid(views)
-
-	### 20 NEWS GROUPS TEST WITH EXACTLY THE SAME PARAMS AS MNIST
-	dataset = dataset_utils.fetch_20newsgroups_dataset_vectorized(os.path.join(paths.get_dataset_path(), '20newsgroups'), tf_normalisation=True)
-	#X_train, y_train, X_test, y_test, Z = split_data(dataset, 0, 1, 2, 3, -1, np.random.RandomState(seed=42))
-	X_train, y_train, X_valid, y_valid, X_test, y_test = split_data_train_dev_test('20newsgroups', dataset, ratio=(0.8, 0.2), random_state=np.random.RandomState(seed=42))
-
-	######## S K L E A R N   C L A S S I F I E R S
-	print('#### SKLEARN SVM')
-	svm = LinearSVC()
-	svm.fit(X_train, y_train)
-	y_pred = svm.predict(X_test)
-	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
-	print('################')
-	result_dict['svm_accuracy'] = accuracy_score(y_test, y_pred)
-	result_dict['svm_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
-
-	print('#### SKLEARN MNB')
-	mnb = MultinomialNB()
-	mnb.fit(X_train, y_train)
-	y_pred = mnb.predict(X_test)
-	print('\tAccuracy: {}; F1-Score: {}'.format(accuracy_score(y_test, y_pred), f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')))
-	print ('################')
-	result_dict['nb_accuracy'] = accuracy_score(y_test, y_pred)
-	result_dict['nb_f1_score'] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
-	##############################################
-
-	timestamped_foldername = path_utils.timestamped_foldername()
-	# TODO: Reproduce this paper: http://www.aclweb.org/anthology/P/P15/P15-1162.pdf
-	act_fn = ['relu', 'tanh']#, 'relu', 'sigmoid']
-	for afn in act_fn:
-
-		print('#### {} ####'.format(afn))
-
-		if (afn == 'relu'):
-			gd_params = {'step_rate': 0.005, 'momentum': 0.95, 'momentum_type': 'nesterov'}
-			optimiser_kwargs = {'eta': 4.}
-		else:
-			optimiser_kwargs = {'eta': 0.5}
-			gd_params = {'step_rate': 0.1, 'momentum': 0.95, 'momentum_type': 'nesterov'}
-
-		lbfgs_params = {'n_factors': 10}
-		rmsprop_params = {'step_rate':0.01, 'decay':0.9, 'momentum':0, 'step_adapt':False, 'step_rate_min':0, 'step_rate_max':np.inf}
-		adadelta_params = {'step_rate':0.05, 'decay':0.9, 'momentum':0, 'offset':1e-4}
-		adam_params = {'step_rate':0.1, 'decay':1-1e-8, 'decay_mom1':0.1, 'decay_mom2':0.001, 'momentum':0, 'offset':1e-8}
-		rprop_params = {'step_shrink':0.5, 'step_grow':1.2, 'min_step':1e-6, 'max_step':1, 'changes_max':0.1}
-		nonlinearcg_params = {'min_grad':1e-6}
-
-		#mlp = MLP(shape=[(8713, 500), 500, (500, 2), 2], dropout_proba=[None, 0.5, None], activation_fn=afn, improvement_threshold=0.995, patience=10, validation_frequency=100, optimiser='gd', **gd_params)
-		#mlp = MLP(shape=[(130107, 500), 500, (500, 20), 20], gradient_check=True, dropout_proba=[None, 0.5, None], activation_fn=afn, max_epochs=200, validation_frequency=10, optimiser='gd', **gd_params)
-
-		#mlp = MLP(shape=[(130107, 1500), 1500, (1500, 300), 300, (300, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=100, validation_frequency=10, optimiser='gd', optimiser_kwargs=optimiser_kwargs)
-		mlp = MLP(shape=[(130107, 1500), 1500, (1500, 20), 20], dropout_proba=None, activation_fn=afn, max_epochs=100, validation_frequency=10, optimiser='gd', optimiser_kwargs=optimiser_kwargs)
-
-		#mlp.W_flat_ = np.empty(4358002)
-
-
-		#initialize.randomize_normal(mlp.W_flat_, 0, 1)
-		#views = shaped_from_flat(mlp.W_flat_, mlp.shape_)
-		#mlp.W_flat_ = ifn(views)
-
-		#mlp.fit(X_train.toarray(), y_train, X_test.toarray(), y_test)
-		mlp.fit(X_train, y_train, X_valid, y_valid)
-		y_pred = mlp.predict(X_test)
-		result_dict['{}_accuracy'.format(afn)] = accuracy_score(y_test, y_pred)
-		result_dict['{}_f1_score'.format(afn)] = f1_score(y_test, y_pred, average='weighted' if len(np.unique(y_test)) > 2 else 'binary')
-
-		# Plot learning curve & weight matrix
-		#utils.plot_learning_curve(mlp.loss_history_, os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'learning_curve', afn))
-		#utils.plot_weight_matrix(shaped_from_flat(mlp.W_best_flat_, mlp.shape_), os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results', 'weight_matrices', afn))
-
-	####################
-
-	out_path = os.path.join(paths.get_out_path(), '20newsgroups', timestamped_foldername, 'results')
-	fname = 'results.json'
-
-	if (not os.path.exists(out_path)):
-		os.makedirs(out_path)
-
-	json.dump(result_dict, open(os.path.join(out_path, fname), 'w'))
