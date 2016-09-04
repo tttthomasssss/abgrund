@@ -60,6 +60,7 @@ class CNN(BaseEstimator):
 		X = self.vector_space_model_.concatenate_vectors(doc)
 
 		for idx, filter in enumerate(self.filter_ngram_ranges_):
+
 			# Convolution
 			for w, b in self.conv_weights_[idx]:
 				feature_map = []

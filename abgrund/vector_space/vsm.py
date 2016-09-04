@@ -22,6 +22,10 @@ class VectorSpaceModel(object):
 			'one': np.ones
 		}
 		self.oov_ = {}
+		self.min_threshold_ = kwargs.pop('min_threshold', -np.inf)
+		if (self.min_threshold_ > -np.inf):
+			pass
+			# TODO: implement positive min_threshold of 0!!!
 
 	@property
 	def vector_shape(self):
