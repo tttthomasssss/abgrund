@@ -23,8 +23,6 @@ class VectorSpaceModel(object):
 		}
 		self.oov_ = {}
 		self.min_threshold_ = kwargs.pop('min_threshold', -np.inf)
-		if (self.min_threshold_ > -np.inf):
-			getattr(self, '_apply_{}_threshold'.format(self.vsm_type_))()
 
 	@property
 	def vector_shape(self):
@@ -35,15 +33,6 @@ class VectorSpaceModel(object):
 
 	def __contains__(self, item):
 		return getattr(self, '_{}_contains'.format(self.vsm_type_))(item)
-
-	def _apply_random_threshold(self):
-		pass # TODO
-
-	def _apply_glove_threshold(self):
-		pass # TODO
-
-	def _apply_word2vec_threshold(self):
-		self.vsm_.syn0[np.where(self.vsm_.syn0<self.min_threshold_)] = self.min_threshold_
 
 	def _random_contains(self, item):
 		return item in self.vsm_
@@ -98,6 +87,9 @@ class VectorSpaceModel(object):
 
 			for jdx, w in enumerate(document):
 				A[jdx] = self[w.strip()]
+
+				if (self.min_threshold_ > -np.inf):
+					A[jdx, np.where(A[jdx]<self.min_threshold_)] = self.min_threshold_
 
 			# Word Dropout
 			keep = self.random_state_.binomial(1, p_keep_word, (len(document),))

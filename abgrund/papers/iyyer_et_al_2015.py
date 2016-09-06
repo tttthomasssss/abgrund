@@ -59,7 +59,7 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
 	# Load the word2vec vectors
 	word2vec = Word2Vec.load_word2vec_format('/Users/thomas/DevSandbox/EpicDataShelf/tag-lab/wikipedia/word2vectors/word2vec_skip-gram_50_0.000100_10.bin', binary=True)
 	p_keep_word = 0.7
-	vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec')
+	vsm = VectorSpaceModel(vsm=word2vec, vector_shape=word2vec.vector_size, vsm_type='word2vec', min_threshold=0)
 
 	# Load the GloVe vectors
 	#p = os.path.join(args.vector_path, args.vector_file)
