@@ -24,7 +24,7 @@ from abgrund.base import utils
 class MLP(BaseEstimator):
 	def __init__(self, shape, activation_fn='tanh', prediction_fn='softmax', w_init='xavier', gradient_check=False,
 				 regularisation='l2', lambda_=0.01, dropout_proba=None, random_state=np.random.RandomState(seed=1105),
-				 max_epochs=20, improvement_threshold=0.995, patience=np.inf, validation_frequency=100,
+				 max_epochs=20, improvement_threshold=0.995, patience=np.inf, validation_frequency=5,
 				 max_weight_norm=None, mini_batch_size=50, shuffle=False, shuffle_mini_batches=False, optimiser='gd',
 				 optimiser_kwargs={}):
 		self.random_state_ = utils.create_random_state(random_state)
@@ -44,7 +44,8 @@ class MLP(BaseEstimator):
 		self.improvement_threshold_ = improvement_threshold
 		self.patience_ = patience
 		self.validation_frequency_ = validation_frequency
-		self.loss_history_ = []
+		self.loss_history_training_ = []
+		self.loss_history_validation_ = []
 		self.mini_batch_size_ = mini_batch_size
 		self.shuffle_ = shuffle
 		self.shuffle_mini_batch_ = utils.shuffle_mini_batch if shuffle_mini_batches else utils.dont_shuffle_mini_batch
@@ -149,10 +150,14 @@ class MLP(BaseEstimator):
 
 			# Log performance
 			y_pred = self.predict(X)
-			print('Training Loss={}; Accuracy={} after epoch {}'.format(self.loss(X, y), accuracy_score(y, y_pred), epoch))
+			training_loss = self.loss(X, y)
+			self.loss_history_training_.append(training_loss)
+			print('Training Loss={}; Accuracy={} after epoch {}'.format(training_loss, accuracy_score(y, y_pred), epoch))
 			if (X_valid is not None):
 				y_pred = self.predict(X_valid)
-				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(self.loss(X_valid, y_valid), accuracy_score(y_valid, y_pred), epoch))
+				validation_loss = self.loss(X_valid, y_valid)
+				self.loss_history_validation_.append(validation_loss)
+				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(validation_loss, accuracy_score(y_valid, y_pred), epoch))
 			print('----------------------------------------')
 
 			if (self.shuffle_): # Shuffle the input data
@@ -164,8 +169,8 @@ class MLP(BaseEstimator):
 		else:
 			return curr_patience <= 0 or loss <= 0
 
-	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2):
-		dg_dW = self._backprop(W, X, utils.one_hot(y, self.num_classes_))
+	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Adapt gradient check to the new weights thingy
+		dg_dW = self._backprop(X, utils.one_hot(y, self.num_classes_))
 
 		num_dg_dW = np.zeros(W.shape)
 		perturb = np.zeros(W.shape)

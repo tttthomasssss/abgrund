@@ -28,7 +28,7 @@ class NoisyGradientDescent():
 class GradientDescent(): # Gradient Descent (can handle SGD, Mini-Batch SGD and Batch GD)
 	def __init__(self, shape, eta=0.01, momentum=None, v=0, mu=0.9, **_):
 		self.eta_ = eta
-		self.weight_update_fn_ = getattr(self, '_{}_momentum_weight_update'.format(momentum), '_vanilla_weight_update')
+		self.weight_update_fn_ = getattr(self, '_{}_momentum_weight_update'.format(momentum), self._vanilla_weight_update)
 		self.shape_ = shape
 		self.v_ = []
 		self.mu_ = []
@@ -58,7 +58,7 @@ class GradientDescent(): # Gradient Descent (can handle SGD, Mini-Batch SGD and 
 		return W + self.v_
 
 	def _nestorov_momentum_weight_update(self, W, dg_dW, idx):
-		pass #http://cs231n.github.io/neural-networks-3/#update
+		raise NotImplementedError #http://cs231n.github.io/neural-networks-3/#update
 
 
 class AdaGrad():

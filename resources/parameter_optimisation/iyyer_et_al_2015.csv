@@ -1,4 +1,4 @@
-random,50,None,False,True,0.7,l2,0.01,50,0.1,ngd,100,average,2,relu
+random,300,None,False,True,1.0,l2,0.01,50,0.01,gd,100,average,2,relu
 
 random,50,None,False,False,1.0,l2,0.01,30,0.01,gd,100,average,1,relu
 random,100,None,False,False,1.0,l2,0.01,30,0.01,gd,100,average,1,relu

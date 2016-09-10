@@ -42,7 +42,7 @@ def plot_learning_curve(loss_history, plot_path):
 	plot_name = 'validation_loss_over_time.png'
 	plt.grid(True)
 	plt.plot(np.arange(1, len(loss_history) + 1), loss_history)
-	plt.ylim([0., (max(loss_history) * 1.1)])
+	plt.ylim([(min(loss_history) * 0.7), (max(loss_history) * 1.1)])
 	plt.savefig(os.path.join(plot_path, plot_name))
 	plt.close()
 
