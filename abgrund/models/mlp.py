@@ -30,6 +30,8 @@ class MLP(BaseEstimator):
 		self.random_state_ = utils.create_random_state(random_state)
 		self.shape_ = shape
 		self.weights_ = self._initialise_weights(w_init, activation_fn)
+		self.best_weights_ = []
+		self.best_loss_ = np.inf
 		self.activation_fn, self.deriv_activation_fn = (getattr(activation, activation_fn), getattr(activation, 'deriv_{}'.format(activation_fn)))
 		self.prediction_fn, self.deriv_prediction_fn = (getattr(activation, prediction_fn), getattr(activation, 'deriv_{}'.format(prediction_fn)))
 		optimiser_kwargs['shape'] = self.shape_
@@ -104,7 +106,7 @@ class MLP(BaseEstimator):
 		return np.argmax(self.predict_proba(X), axis=1)
 
 	def loss(self, X, y):
-		activations, _ = self._forward_propagation(X,dropout_mode='predict')
+		activations, _ = self._forward_propagation(X, dropout_mode='predict')
 		predictions = activations[-1]
 
 		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
@@ -150,18 +152,27 @@ class MLP(BaseEstimator):
 
 			# Log performance
 			y_pred = self.predict(X)
-			training_loss = self.loss(X, y)
-			self.loss_history_training_.append(training_loss)
-			print('Training Loss={}; Accuracy={} after epoch {}'.format(training_loss, accuracy_score(y, y_pred), epoch))
+			loss = self.loss(X, y)
+			self.loss_history_training_.append(loss)
+			print('Training Loss={}; Accuracy={} after epoch {}'.format(loss, accuracy_score(y, y_pred), epoch))
 			if (X_valid is not None):
 				y_pred = self.predict(X_valid)
-				validation_loss = self.loss(X_valid, y_valid)
-				self.loss_history_validation_.append(validation_loss)
-				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(validation_loss, accuracy_score(y_valid, y_pred), epoch))
+				loss = self.loss(X_valid, y_valid)
+				self.loss_history_validation_.append(loss)
+				print('Validation Loss={}; Validation Accuracy={} after epoch {}'.format(loss, accuracy_score(y_valid, y_pred), epoch))
 			print('----------------------------------------')
 
 			if (self.shuffle_): # Shuffle the input data
 				X, Y = shuffle(X, Y, random_state=self.random_state_)
+
+			# Early stopping check
+			if (epoch % self.validation_frequency_ == 0):
+				if (loss < self.best_loss_):
+					self.best_loss_ = loss
+					self.best_weights_ = [np.copy(W) for W in self.weights_]
+				else:
+					self.weights_ = [np.copy(W) for W in self.best_weights_]
+					break
 
 	def _stopping_criterion(self, curr_iter, curr_patience, loss):
 		if (np.isinf(curr_patience)):
@@ -169,24 +180,35 @@ class MLP(BaseEstimator):
 		else:
 			return curr_patience <= 0 or loss <= 0
 
-	def _gradient_check(self, W, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Adapt gradient check to the new weights thingy
-		dg_dW = self._backprop(X, utils.one_hot(y, self.num_classes_))
+	def _gradient_check(self, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Debug gradient check
+		gradients = self._backprop(X, utils.one_hot(y, self.num_classes_))
 
-		num_dg_dW = np.zeros(W.shape)
-		perturb = np.zeros(W.shape)
+		diffs = []
+		errors = []
 
-		for i in range(W.shape[0]):
-			perturb[i] = eps
+		for i in range(len(self.weights_)):
+			W = self.weights_[i].copy()
+			num_dg_dW = np.zeros(W.shape).reshape(-1, 1)
+			perturb = np.zeros(W.shape).reshape(-1, 1)
 
-			loss_plus = self.loss(W + perturb, X, y)
-			loss_minus = self.loss(W - perturb, X, y)
+			for j in range(perturb.shape[0]):
+				perturb[j] = eps
 
-			num_dg_dW[i] = (loss_plus - loss_minus) / (2 * eps)
-			perturb[i] = 0
+				self.weights_[i] = W + perturb.reshape(W.shape)
+				loss_plus = self.loss(X, y)
 
-		diff = sp.linalg.norm(num_dg_dW - dg_dW) / sp.linalg.norm(num_dg_dW + dg_dW)
+				self.weights_[i] = W - perturb.reshape(W.shape)
+				loss_minus = self.loss(X, y)
 
-		return (diff <= error_threshold, diff, error_threshold)
+				num_dg_dW[j] = (loss_plus - loss_minus) / (2 * eps)
+				perturb[j] = 0
+
+			diff = sp.linalg.norm(num_dg_dW.reshape(W.shape) - gradients[i]) / sp.linalg.norm(num_dg_dW.reshape(W.shape) + gradients[i])
+			diffs.append(diff)
+
+			errors.append(diff <= error_threshold)
+
+		return diffs, errors
 
 	def _initialise_weights(self, W_init, activation_fn):
 		if (W_init == 'xavier' and hasattr(initialisation, 'randomise_uniform_{}'.format(activation_fn))):

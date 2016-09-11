@@ -152,6 +152,10 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
 	utils.plot_learning_curve(mlp.loss_history_training_, '/Users/thomas/DevSandbox/InfiniteSandbox/tag-lab/Abgrund/test/dump/training_loss')
 	utils.plot_learning_curve(mlp.loss_history_validation_, '/Users/thomas/DevSandbox/InfiniteSandbox/tag-lab/Abgrund/test/dump/validation_loss')
 
+	#print('Gradient checking...')
+	#diffs, errs = mlp._gradient_check(X_dev, y_dev)
+	#print('Diffs: {}; Errors: {}'.format(diffs, errs))
+
 	return acc
 
 if (__name__ == '__main__'):
