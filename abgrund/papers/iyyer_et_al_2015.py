@@ -143,18 +143,17 @@ def run(config_name, vsm_type, vector_dim, vector_file, use_phrase_labels, fine_
 	print('Accuracy: {}'.format(acc))
 	print('----------------------------------------------------')
 
-
-	svm = LinearSVC()
-	svm.fit(X_train, y_train)
-	y_pred = svm.predict(X_test)
-	print('SVM Accuracy: {}'.format(accuracy_score(y_test, y_pred)))
+	#svm = LinearSVC()
+	#svm.fit(X_train, y_train)
+	#y_pred = svm.predict(X_test)
+	#print('SVM Accuracy: {}'.format(accuracy_score(y_test, y_pred)))
 
 	utils.plot_learning_curve(mlp.loss_history_training_, '/Users/thomas/DevSandbox/InfiniteSandbox/tag-lab/Abgrund/test/dump/training_loss')
 	utils.plot_learning_curve(mlp.loss_history_validation_, '/Users/thomas/DevSandbox/InfiniteSandbox/tag-lab/Abgrund/test/dump/validation_loss')
 
-	#print('Gradient checking...')
-	#diffs, errs = mlp._gradient_check(X_dev, y_dev)
-	#print('Diffs: {}; Errors: {}'.format(diffs, errs))
+	print('Gradient checking...')
+	diffs, errs = mlp._gradient_check(X_dev, y_dev)
+	print('Diffs: {}; Errors: {}'.format(diffs, errs))
 
 	return acc
 

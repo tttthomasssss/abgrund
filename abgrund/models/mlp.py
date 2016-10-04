@@ -188,6 +188,7 @@ class MLP(BaseEstimator):
 
 		for i in range(len(self.weights_)):
 			W = self.weights_[i].copy()
+			dg_dW = gradients[i].reshape(-1, 1)
 			num_dg_dW = np.zeros(W.shape).reshape(-1, 1)
 			perturb = np.zeros(W.shape).reshape(-1, 1)
 
@@ -203,10 +204,10 @@ class MLP(BaseEstimator):
 				num_dg_dW[j] = (loss_plus - loss_minus) / (2 * eps)
 				perturb[j] = 0
 
-			diff = sp.linalg.norm(num_dg_dW.reshape(W.shape) - gradients[i]) / sp.linalg.norm(num_dg_dW.reshape(W.shape) + gradients[i])
+			diff = sp.linalg.norm(num_dg_dW - dg_dW) / sp.linalg.norm(num_dg_dW + dg_dW)
 			diffs.append(diff)
 
-			errors.append(diff <= error_threshold)
+			errors.append(diff > error_threshold)
 
 		return diffs, errors
 
