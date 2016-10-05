@@ -6,6 +6,7 @@ class VectorSpaceModel(object):
 	'''
 	Default VSM model to e.g. wrap gensim's word2vec and others
 	'''
+	# TODO: Add support for `wort`, SENNA vectors (Collobert & Weston) and Turian vectors
 	def __init__(self, vsm, vector_shape, vsm_type, oov_handling='gaussian', random_state=np.random.RandomState(seed=1105), **kwargs):
 		self.vsm_ = vsm
 		self.vsm_type_ = vsm_type

@@ -52,7 +52,6 @@ class MLP(BaseEstimator):
 		self.shuffle_ = shuffle
 		self.shuffle_mini_batch_ = utils.shuffle_mini_batch if shuffle_mini_batches else utils.dont_shuffle_mini_batch
 		self.num_classes_ = 0
-		self.num_instances_ = 0
 
 	# Forward Propagation phase
 	def _forward_propagation(self, X, dropout_mode='fit'):
@@ -113,14 +112,13 @@ class MLP(BaseEstimator):
 
 		# Add regularisation
 		reg = self.regularisation_(self.lambda_, self.weights_)
-		loss += (reg / (self.num_instances_ * 2))
+		loss += (reg / (utils.num_instances(X) * 2))
 
 		return loss
 
 	def fit(self, X, y, X_valid, y_valid):
 		# Some initial administrative stuff
 		self.num_classes_ = np.unique(y).shape[0]
-		self.num_instances_ = utils.num_instances(X)
 		Y = utils.one_hot(y, self.num_classes_)
 
 		# Build index cycles over input data
@@ -180,7 +178,7 @@ class MLP(BaseEstimator):
 		else:
 			return curr_patience <= 0 or loss <= 0
 
-	def _gradient_check(self, X, y, eps=10e-4, error_threshold=10e-2): # TODO: Debug gradient check
+	def _gradient_check(self, X, y, eps=1e-4, error_threshold=1e-2): # TODO: Debug gradient check
 		gradients = self._backprop(X, utils.one_hot(y, self.num_classes_))
 
 		diffs = []
@@ -188,9 +186,9 @@ class MLP(BaseEstimator):
 
 		for i in range(len(self.weights_)):
 			W = self.weights_[i].copy()
-			dg_dW = gradients[i].reshape(-1, 1)
-			num_dg_dW = np.zeros(W.shape).reshape(-1, 1)
-			perturb = np.zeros(W.shape).reshape(-1, 1)
+			dg_dW = gradients[i].reshape(-1)
+			num_dg_dW = np.zeros(W.shape).reshape(-1)
+			perturb = np.zeros(W.shape).reshape(-1)
 
 			for j in range(perturb.shape[0]):
 				perturb[j] = eps
