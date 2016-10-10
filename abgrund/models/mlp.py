@@ -107,12 +107,13 @@ class MLP(BaseEstimator):
 	def loss(self, X, y):
 		activations, _ = self._forward_propagation(X, dropout_mode='predict')
 		predictions = activations[-1]
+		n = utils.num_instances(X)
 
-		loss = (np.nan_to_num(-np.log(predictions)) * utils.one_hot(y, s=self.num_classes_)).sum(axis=1).mean() # use np.nansum for this utils.one_hot(y)).sum(axis=1).mean()
+		loss = (-np.log(predictions) * utils.one_hot(y, s=self.num_classes_)).sum() / n
 
 		# Add regularisation
 		reg = self.regularisation_(self.lambda_, self.weights_)
-		loss += (reg / (utils.num_instances(X) * 2))
+		loss += (reg / (n * 2))
 
 		return loss
 
@@ -187,8 +188,8 @@ class MLP(BaseEstimator):
 		for i in range(len(self.weights_)):
 			W = self.weights_[i].copy()
 			dg_dW = gradients[i].reshape(-1)
-			num_dg_dW = np.zeros(W.shape).reshape(-1)
-			perturb = np.zeros(W.shape).reshape(-1)
+			num_dg_dW = np.zeros(dg_dW.shape)
+			perturb = np.zeros(dg_dW.shape)
 
 			for j in range(perturb.shape[0]):
 				perturb[j] = eps
@@ -202,6 +203,15 @@ class MLP(BaseEstimator):
 				num_dg_dW[j] = (loss_plus - loss_minus) / (2 * eps)
 				perturb[j] = 0
 
+				f = num_dg_dW[j] / dg_dW[j]
+				print('Num gradient: {}'.format(num_dg_dW[j]))
+				print('Backprop gradient: {}'.format(dg_dW[j]))
+				print('Factor: {}'.format(f))
+				print('------------------------------------------------------')
+
+			np.savetxt('/Users/thomas/Desktop/num_grad_{}.txt'.format(i), num_dg_dW, '%.4f')
+			np.savetxt('/Users/thomas/Desktop/grad_{}.txt'.format(i), dg_dW, '%.4f')
+			print('diffdiff: {}'.format(num_dg_dW.sum() - dg_dW.sum()))
 			diff = sp.linalg.norm(num_dg_dW - dg_dW) / sp.linalg.norm(num_dg_dW + dg_dW)
 			diffs.append(diff)
 
@@ -254,6 +264,7 @@ class MLP(BaseEstimator):
 	def _backprop(self, X, y):
 		# Backprop implemented by following http://neuralnetworksanddeeplearning.com/chap2.html
 		gradients = []
+		n = utils.num_instances(X)
 
 		# Dropout Gradients
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -262,7 +273,7 @@ class MLP(BaseEstimator):
 		# Prediction of network w.r.t. to current W
 		activations, magnitudes = self._forward_propagation(X)
 
-		# Pop weights and bias for last layer
+		# Pop weights for last layer
 		W_ = self.weights_[-2]
 
 		# Pop activations and activation magnitudes
@@ -276,11 +287,11 @@ class MLP(BaseEstimator):
 		a = activations.pop()
 
 		# Gradients w.r.t. last layer error
-		de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a) # BP 4: dot product between inputs that caused the error and backpropped error
+		de_dW = safe_sparse_dot(a.T, delta_l) / n # BP 4: dot product between inputs that caused the error and backpropped error
 		db_dW = delta_l.mean(axis=0) # BP 3: gradient of bias = delta_l
 
 		# Add Gradient from Regularisation parameter
-		de_dW += (self.deriv_regularisation_(self.lambda_, W_) / utils.num_instances(a))
+		de_dW += (self.deriv_regularisation_(self.lambda_, W_) / n)
 
 		# Dropout during Backprop a.k.a. Backpropout
 		if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
@@ -304,10 +315,10 @@ class MLP(BaseEstimator):
 			delta_l = safe_sparse_dot(delta_l, W_next.T) * self.deriv_activation_fn(z)
 
 			# BP 4: Gradients for weights w.r.t. backpropped error (delta_l) and forwardpropped activation
-			de_dW = safe_sparse_dot(a.T, delta_l) / utils.num_instances(a)
+			de_dW = safe_sparse_dot(a.T, delta_l) / n
 			db_dW = delta_l.mean(axis=0)
 
-			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / utils.num_instances(a))
+			de_dW += (self.deriv_regularisation_(self.lambda_, W_curr) / n)
 
 			# Dropout during Backprop a.k.a. Backpropout
 			if (self.dropout_masks_ is not None and len(self.dropout_masks_) > 0):
